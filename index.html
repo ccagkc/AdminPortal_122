@@ -12,9 +12,9 @@
     <meta name="robots" content="noindex, nofollow">
 
     <link rel="manifest" href="manifest.json">
-    <meta name="theme-color" content="#1e293b">
+    <meta name="theme-color" content="#1e3a8a">
     
-    <link rel="stylesheet" href="style.css?v=5">
+    <link rel="stylesheet" href="style.css?v=6">
 
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+TC:wght@500;700&family=Noto+Sans+TC:wght@400;500;700&display=swap" rel="stylesheet">
@@ -27,19 +27,22 @@
                         'sans': ['"Noto Sans TC"', 'sans-serif'],
                     },
                     colors: {
-                        nature: { 
-                            50: 'var(--theme-50)', 100: 'var(--theme-100)', 200: 'var(--theme-200)', 
-                            300: 'var(--theme-300)', 400: 'var(--theme-400)', 500: 'var(--theme-500)', 
-                            600: 'var(--theme-600)', 700: 'var(--theme-700)', 800: 'var(--theme-800)', 900: 'var(--theme-900)'
+                        winblue: {
+                            50: '#eff6ff',
+                            100: '#dbeafe',
+                            200: '#bfdbfe',
+                            600: '#2563eb',
+                            700: '#1d4ed8',
+                            800: '#1e40af',
+                            900: '#1e3a8a',
+                            950: '#172554'
                         }
                     },
-                    boxShadow: { 'soft': '0 10px 40px -10px rgba(0,0,0,0.05)' },
-                    animation: {
-                        'fade-in': 'fadeIn 0.3s ease-out forwards'
-                    },
+                    boxShadow: { 'win': '0 10px 30px -5px rgba(30, 58, 138, 0.2)' },
+                    animation: { 'fade-in': 'fadeIn 0.25s ease-out forwards' },
                     keyframes: {
                         fadeIn: {
-                            '0%': { opacity: '0', transform: 'translateY(10px)' },
+                            '0%': { opacity: '0', transform: 'translateY(6px)' },
                             '100%': { opacity: '1', transform: 'translateY(0)' },
                         }
                     }
@@ -53,7 +56,7 @@
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 </head>
-<body class="bg-slate-100 text-slate-800 font-sans antialiased min-h-screen flex flex-col">
+<body class="bg-slate-200 text-slate-800 font-sans antialiased min-h-screen flex flex-col">
     <div id="root" class="flex-grow flex flex-col"></div>
 
     <script type="text/babel">
@@ -64,6 +67,16 @@
             footerText: "© CCAGKC · CHURCH CALENDAR ADMIN SYSTEM"
         };
 
+        const getCurrentDateTimeLocal = () => {
+            const now = new Date();
+            const year = now.getFullYear();
+            const month = String(now.getMonth() + 1).padStart(2, '0');
+            const day = String(now.getDate()).padStart(2, '0');
+            const hours = String(now.getHours()).padStart(2, '0');
+            const minutes = String(now.getMinutes()).padStart(2, '0');
+            return `${year}-${month}-${day}T${hours}:${minutes}`;
+        };
+
         const App = () => {
             const [fb, setFb] = useState(null);
             const [currentUser, setCurrentUser] = useState(null);
@@ -72,26 +85,32 @@
 
             const [appSettings, setAppSettings] = useState({ groups: ['未入組/其他', '少年崇拜', '奇行組', 'IMA組', '加利利奮青', '彼得組', '隨意行組', '葡萄果組', 'Spectrum組', '家靈一組', '7-11組', '清心組', 'ReConnect組', '基順ECO組', '蜜組', '喜樂組'] });
 
-            // 管理員登入 Modal State
+            // 登入 State
             const [password, setPassword] = useState('');
             const [isRegister, setIsRegister] = useState(false);
             const [errorMsg, setErrorMsg] = useState('');
             const [authLoading, setAuthLoading] = useState(false);
 
-            // Dashboard 內部 State
+            // Dashboard State
             const [activeTab, setActiveTab] = useState('stats'); 
             const [newGroup, setNewGroup] = useState('');
             const [usersList, setUsersList] = useState([]);
             const [loadingStats, setLoadingStats] = useState(false);
 
-            // 編寫通知 State
+            // 發布通告 State
             const [notifTitle, setNotifTitle] = useState('');
             const [notifBody, setNotifBody] = useState('');
             const [notifUrl, setNotifUrl] = useState('');
+            const [notifDateLocal, setNotifDateLocal] = useState(getCurrentDateTimeLocal());
             const [publishing, setPublishing] = useState(false);
+
+            // 管理/刪除通告 State
+            const [existingNotifs, setExistingNotifs] = useState([]);
+            const [loadingNotifs, setLoadingStatsNotifs] = useState(false);
 
             let unsubscribeSettings = useRef(null);
             let unsubscribeProfile = useRef(null);
+            let unsubscribeNotifList = useRef(null);
 
             useEffect(() => {
                 let unsubscribeAuth = null;
@@ -156,10 +175,11 @@
                     if (unsubscribeAuth) unsubscribeAuth();
                     if (unsubscribeSettings.current) unsubscribeSettings.current();
                     if (unsubscribeProfile.current) unsubscribeProfile.current();
+                    if (unsubscribeNotifList.current) unsubscribeNotifList.current();
                 };
             }, []);
 
-            // 抓取會友統計列表
+            // 抓取會友統計
             useEffect(() => {
                 if (activeTab === 'stats' && fb && currentUser) {
                     setLoadingStats(true);
@@ -183,7 +203,30 @@
                 }
             }, [activeTab, fb, currentUser]);
 
-            // 管理員登入/註冊處理
+            // 實時載入已發布通告（用於刪除與管理）
+            useEffect(() => {
+                if (activeTab === 'manageNotifs' && fb && currentUser) {
+                    setLoadingStatsNotifs(true);
+                    const notifCol = fb.dbModule.collection(fb.db, 'artifacts', fb.appId, 'public', 'data', 'notifications');
+                    const q = fb.dbModule.query(notifCol, fb.dbModule.orderBy('createdAt', 'desc'));
+                    
+                    unsubscribeNotifList.current = fb.dbModule.onSnapshot(q, (snapshot) => {
+                        const list = [];
+                        snapshot.forEach(doc => {
+                            list.push({ id: doc.id, ...doc.data() });
+                        });
+                        setExistingNotifs(list);
+                        setLoadingStatsNotifs(false);
+                    }, (err) => {
+                        console.error("載入通告失敗:", err);
+                        setLoadingStatsNotifs(false);
+                    });
+                }
+                return () => {
+                    if (unsubscribeNotifList.current) unsubscribeNotifList.current();
+                };
+            }, [activeTab, fb, currentUser]);
+
             const handleAdminAuth = async (e) => {
                 e.preventDefault(); 
                 setAuthLoading(true); 
@@ -207,7 +250,6 @@
                 }
             };
 
-            // 新增小組
             const handleAddGroup = async () => {
                 if (!newGroup.trim() || appSettings.groups.includes(newGroup.trim())) return;
                 const updated = [...appSettings.groups, newGroup.trim()];
@@ -217,7 +259,6 @@
                 alert('✅ 小組已成功新增！');
             };
 
-            // 刪除小組
             const handleRemoveGroup = async (groupName) => {
                 if (!confirm(`確定要刪除小組「${groupName}」嗎？`)) return;
                 const updated = appSettings.groups.filter(g => g !== groupName);
@@ -225,7 +266,6 @@
                 await fb.dbModule.setDoc(settingsRef, { groups: updated }, { merge: true });
             };
 
-            // 匯出 CSV 報表
             const handleExportCSV = () => {
                 if (usersList.length === 0) {
                     alert("目前沒有數據可供匯出。");
@@ -258,7 +298,7 @@
                 URL.revokeObjectURL(url);
             };
 
-            // 發布通知至 Firestore
+            // 🟢 發布通知：含自訂 ISO 時間轉換
             const handlePublishNotification = async (e) => {
                 e.preventDefault();
                 if (!notifTitle.trim() || !notifBody.trim()) {
@@ -268,6 +308,7 @@
 
                 setPublishing(true);
                 try {
+                    const isoCreatedAt = new Date(notifDateLocal).toISOString();
                     const notifCol = fb.dbModule.collection(
                         fb.db, 
                         'artifacts', fb.appId, 'public', 'data', 'notifications'
@@ -277,7 +318,7 @@
                         title: notifTitle.trim(),
                         body: notifBody.trim(),
                         url: notifUrl.trim() || '',
-                        createdAt: new Date().toISOString(),
+                        createdAt: isoCreatedAt,
                         publisher: userProfile?.username || '系統管理員'
                     });
 
@@ -285,12 +326,32 @@
                     setNotifTitle('');
                     setNotifBody('');
                     setNotifUrl('');
-                    setActiveTab('stats'); 
+                    setNotifDateLocal(getCurrentDateTimeLocal());
+                    setActiveTab('manageNotifs'); 
                 } catch (err) {
                     console.error('寫入 Firestore 失敗:', err);
                     alert('發布失敗：' + err.message);
                 } finally {
                     setPublishing(false);
+                }
+            };
+
+            // 🟢 刪除通告邏輯
+            const handleDeleteNotification = async (docId, title) => {
+                if (!confirm(`⚠️ 確定要刪除這則通告嗎？\n\n標題：「${title}」\n\n刪除後全教會會友的手機將無法再查閱此通告！`)) {
+                    return;
+                }
+
+                try {
+                    const docRef = fb.dbModule.doc(
+                        fb.db, 
+                        'artifacts', fb.appId, 'public', 'data', 'notifications', docId
+                    );
+                    await fb.dbModule.deleteDoc(docRef);
+                    alert('🗑️ 該通告已成功刪除！');
+                } catch (err) {
+                    console.error('刪除通告失敗:', err);
+                    alert('刪除失敗：' + err.message);
                 }
             };
 
@@ -302,40 +363,40 @@
             }, {});
 
             if (loading) return (
-                <div className="flex-grow flex flex-col items-center justify-center text-slate-600 bg-slate-100 min-h-screen">
-                    <i className="fa-solid fa-circle-notch fa-spin text-5xl mb-4 text-slate-700"></i>
-                    <p className="font-bold tracking-widest text-lg">安全驗證中...</p>
+                <div className="flex-grow flex flex-col items-center justify-center text-winblue-900 bg-slate-200 min-h-screen">
+                    <i className="fa-solid fa-circle-notch fa-spin text-5xl mb-4 text-winblue-800"></i>
+                    <p className="font-bold tracking-widest text-lg">Windows 管理員安全驗證中...</p>
                 </div>
             );
 
-            // 未登入管理員畫面
+            // 未登入管理員畫面 (Windows 傳統湛藍主題)
             if (!currentUser) {
                 return (
-                    <div className="min-h-screen flex items-center justify-center p-4 bg-slate-900">
-                        <div className="bg-white rounded-3xl w-full max-w-md shadow-2xl overflow-hidden animate-fade-in">
-                            <div className="bg-slate-800 p-8 text-white text-center relative">
-                                <div className="w-16 h-16 bg-slate-700 rounded-2xl flex items-center justify-center mx-auto mb-4 text-nature-400 text-2xl shadow-inner">
-                                    <i className="fa-solid fa-shield-halved"></i>
+                    <div className="min-h-screen flex items-center justify-center p-4 bg-winblue-950">
+                        <div className="bg-white rounded-2xl w-full max-w-md shadow-win border-2 border-winblue-600 overflow-hidden animate-fade-in">
+                            <div className="bg-gradient-to-r from-winblue-900 via-winblue-800 to-winblue-900 p-8 text-white text-center relative border-b-4 border-winblue-600">
+                                <div className="w-16 h-16 bg-winblue-950 rounded-xl flex items-center justify-center mx-auto mb-4 text-winblue-200 text-3xl shadow-inner border border-winblue-700">
+                                    <i className="fa-solid fa-window-restore"></i>
                                 </div>
                                 <h2 className="text-2xl font-bold font-serif">葵涌堂悅曆</h2>
-                                <p className="text-slate-400 text-xs mt-1 tracking-widest uppercase">管理員專用控制台</p>
+                                <p className="text-winblue-200 text-xs mt-1 tracking-widest uppercase">系統管理控制台 (ADMIN CONSOLE)</p>
                             </div>
 
                             <form onSubmit={handleAdminAuth} className="p-8 space-y-6">
                                 {errorMsg && (
-                                    <div className="text-red-600 text-sm bg-red-50 p-3.5 rounded-xl border border-red-100 font-medium">
+                                    <div className="text-red-600 text-sm bg-red-50 p-3.5 rounded-xl border border-red-200 font-medium">
                                         {errorMsg}
                                     </div>
                                 )}
 
                                 <div>
-                                    <label className="block text-sm font-bold text-slate-700 mb-2">管理員安全密碼</label>
+                                    <label className="block text-sm font-bold text-winblue-900 mb-2">管理員安全密碼</label>
                                     <input 
                                         type="password" 
                                         value={password} 
                                         onChange={e=>setPassword(e.target.value)} 
-                                        placeholder="請輸入密碼" 
-                                        className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl focus:outline-none focus:border-slate-800 text-center font-bold tracking-widest text-xl" 
+                                        placeholder="請輸入管理密碼" 
+                                        className="w-full p-4 bg-slate-50 border-2 border-winblue-200 rounded-xl focus:outline-none focus:border-winblue-600 text-center font-bold tracking-widest text-xl text-winblue-950" 
                                         required 
                                         autoFocus 
                                     />
@@ -347,15 +408,15 @@
                                         id="regAdmin" 
                                         checked={isRegister} 
                                         onChange={(e) => setIsRegister(e.target.checked)} 
-                                        className="mr-2" 
+                                        className="mr-2 text-winblue-600 focus:ring-winblue-500 rounded" 
                                     />
-                                    <label htmlFor="regAdmin" className="text-xs text-slate-500 cursor-pointer">首次初始化設定密碼</label>
+                                    <label htmlFor="regAdmin" className="text-xs text-slate-600 cursor-pointer font-medium">首次初始化設定帳號密碼</label>
                                 </div>
 
                                 <button 
                                     type="submit" 
                                     disabled={authLoading} 
-                                    className="w-full bg-slate-800 text-white font-bold py-4 rounded-2xl hover:bg-slate-700 transition shadow-lg active:scale-95 text-lg"
+                                    className="w-full bg-winblue-800 hover:bg-winblue-900 text-white font-bold py-4 rounded-xl transition shadow-md active:scale-95 text-lg border border-winblue-950"
                                 >
                                     {authLoading ? <i className="fa-solid fa-spinner fa-spin"></i> : (isRegister ? '初始化並登入' : '安全登入管理後台')}
                                 </button>
@@ -365,51 +426,58 @@
                 );
             }
 
-            // 已登入管理員畫面 (Admin Dashboard)
+            // 已登入 Dashboard
             return (
-                <div className="min-h-screen flex flex-col bg-slate-100">
-                    <header className="bg-slate-900 text-white p-6 shadow-md border-b border-slate-800">
+                <div className="min-h-screen flex flex-col bg-slate-200 font-sans">
+                    {/* Header: Windows 皇家藍 */}
+                    <header className="bg-winblue-900 text-white p-5 shadow-lg border-b-4 border-winblue-600 sticky top-0 z-50">
                         <div className="max-w-6xl mx-auto flex justify-between items-center">
                             <div className="flex items-center gap-3">
-                                <div className="w-10 h-10 bg-nature-600 rounded-xl flex items-center justify-center text-white">
-                                    <i className="fa-solid fa-server text-lg"></i>
+                                <div className="w-10 h-10 bg-winblue-800 rounded-lg flex items-center justify-center text-white border border-winblue-600 shadow-inner">
+                                    <i className="fa-solid fa-display text-lg"></i>
                                 </div>
                                 <div>
-                                    <h1 className="text-xl font-bold font-serif">葵涌堂悅曆 · 後台管理系統</h1>
-                                    <p className="text-slate-400 text-xs">當前管理員：{userProfile?.username || currentUser.email}</p>
+                                    <h1 className="text-xl font-bold font-serif tracking-wide">葵涌堂悅曆 · 管理控制台</h1>
+                                    <p className="text-winblue-200 text-xs">當前管理員：{userProfile?.username || currentUser.email}</p>
                                 </div>
                             </div>
 
                             <button 
                                 onClick={() => fb.authModule.signOut(fb.auth)} 
-                                className="bg-slate-800 hover:bg-red-600 text-slate-300 hover:text-white px-4 py-2 rounded-xl text-xs font-bold transition border border-slate-700 flex items-center gap-2"
+                                className="bg-winblue-950 hover:bg-red-700 text-winblue-100 hover:text-white px-4 py-2 rounded-lg text-xs font-bold transition border border-winblue-700 flex items-center gap-2 shadow-sm"
                             >
-                                <i className="fa-solid fa-arrow-right-from-bracket"></i> 安全登出
+                                <i className="fa-solid fa-power-off"></i> 安全登出
                             </button>
                         </div>
                     </header>
 
                     <main className="flex-grow p-4 md:p-8 max-w-6xl mx-auto w-full">
-                        <div className="bg-white rounded-3xl shadow-soft border border-slate-200/80 overflow-hidden min-h-[70vh]">
-                            {/* 頂部 Tab 選單 */}
-                            <div className="flex border-b border-slate-200 bg-slate-50/50">
+                        <div className="bg-white rounded-2xl shadow-win border border-winblue-200 overflow-hidden min-h-[75vh]">
+                            {/* Windows 傳統風格選單 */}
+                            <div className="flex flex-wrap border-b-2 border-winblue-200 bg-winblue-50/80">
                                 <button 
                                     onClick={() => setActiveTab('stats')} 
-                                    className={`flex-1 py-4 font-bold transition flex items-center justify-center gap-2 ${activeTab === 'stats' ? 'bg-white text-nature-700 border-b-2 border-nature-600 shadow-sm' : 'text-slate-500 hover:bg-slate-100'}`}
+                                    className={`flex-1 min-w-[140px] py-3.5 px-4 font-bold transition flex items-center justify-center gap-2 border-r border-winblue-200 text-sm ${activeTab === 'stats' ? 'bg-white text-winblue-900 border-b-2 border-winblue-800 shadow-sm' : 'text-slate-600 hover:bg-winblue-100/60'}`}
                                 >
-                                    <i className="fa-solid fa-chart-pie"></i> 參與統計
+                                    <i className="fa-solid fa-chart-pie text-winblue-600"></i> 參與統計
                                 </button>
                                 <button 
                                     onClick={() => setActiveTab('publish')} 
-                                    className={`flex-1 py-4 font-bold transition flex items-center justify-center gap-2 ${activeTab === 'publish' ? 'bg-white text-nature-700 border-b-2 border-nature-600 shadow-sm' : 'text-slate-500 hover:bg-slate-100'}`}
+                                    className={`flex-1 min-w-[140px] py-3.5 px-4 font-bold transition flex items-center justify-center gap-2 border-r border-winblue-200 text-sm ${activeTab === 'publish' ? 'bg-white text-winblue-900 border-b-2 border-winblue-800 shadow-sm' : 'text-slate-600 hover:bg-winblue-100/60'}`}
                                 >
-                                    <i className="fa-solid fa-paper-plane"></i> 發布通告
+                                    <i className="fa-solid fa-paper-plane text-winblue-600"></i> 發布通告
+                                </button>
+                                <button 
+                                    onClick={() => setActiveTab('manageNotifs')} 
+                                    className={`flex-1 min-w-[140px] py-3.5 px-4 font-bold transition flex items-center justify-center gap-2 border-r border-winblue-200 text-sm ${activeTab === 'manageNotifs' ? 'bg-white text-winblue-900 border-b-2 border-winblue-800 shadow-sm' : 'text-slate-600 hover:bg-winblue-100/60'}`}
+                                >
+                                    <i className="fa-solid fa-list-check text-winblue-600"></i> 刪除/管理通告
                                 </button>
                                 <button 
                                     onClick={() => setActiveTab('settings')} 
-                                    className={`flex-1 py-4 font-bold transition flex items-center justify-center gap-2 ${activeTab === 'settings' ? 'bg-white text-nature-700 border-b-2 border-nature-600 shadow-sm' : 'text-slate-500 hover:bg-slate-100'}`}
+                                    className={`flex-1 min-w-[140px] py-3.5 px-4 font-bold transition flex items-center justify-center gap-2 text-sm ${activeTab === 'settings' ? 'bg-white text-winblue-900 border-b-2 border-winblue-800 shadow-sm' : 'text-slate-600 hover:bg-winblue-100/60'}`}
                                 >
-                                    <i className="fa-solid fa-users-gear"></i> 小組設定
+                                    <i className="fa-solid fa-users-gear text-winblue-600"></i> 小組設定
                                 </button>
                             </div>
 
@@ -417,15 +485,15 @@
                                 {/* Tab 1: 數據統計 */}
                                 {activeTab === 'stats' && (
                                     <div className="animate-fade-in space-y-6">
-                                        <div className="flex flex-col md:flex-row justify-between items-start md:items-center bg-nature-50/50 p-6 rounded-2xl border border-nature-100 gap-4">
+                                        <div className="flex flex-col md:flex-row justify-between items-start md:items-center bg-winblue-50 p-6 rounded-xl border border-winblue-200 gap-4">
                                             <div>
-                                                <h3 className="font-bold text-nature-900 text-lg">全教會參與數據彙整</h3>
-                                                <p className="text-xs text-nature-700 mt-1">目前共有 {usersList.length} 位會友完成登記</p>
+                                                <h3 className="font-bold text-winblue-950 text-lg">全教會參與數據彙整</h3>
+                                                <p className="text-xs text-winblue-800 mt-1">目前共有 {usersList.length} 位會友完成登記</p>
                                             </div>
                                             <button 
                                                 onClick={handleExportCSV} 
                                                 disabled={usersList.length === 0} 
-                                                className="w-full md:w-auto bg-nature-600 hover:bg-nature-700 text-white px-5 py-3 rounded-xl font-bold transition shadow-md active:scale-95 disabled:opacity-50 flex items-center justify-center gap-2"
+                                                className="w-full md:w-auto bg-winblue-800 hover:bg-winblue-900 text-white px-5 py-3 rounded-xl font-bold transition shadow-md active:scale-95 disabled:opacity-50 flex items-center justify-center gap-2 border border-winblue-950"
                                             >
                                                 <i className="fa-solid fa-file-csv text-lg"></i> 匯出 Excel / CSV 報表
                                             </button>
@@ -433,29 +501,29 @@
 
                                         {loadingStats ? (
                                             <div className="text-center py-20 text-slate-400">
-                                                <i className="fa-solid fa-spinner fa-spin text-3xl mb-3 block"></i>
+                                                <i className="fa-solid fa-spinner fa-spin text-3xl mb-3 block text-winblue-800"></i>
                                                 載入會友數據中...
                                             </div>
                                         ) : Object.keys(groupedStats).length === 0 ? (
-                                            <div className="text-center py-16 text-slate-400 bg-slate-50 rounded-2xl border border-dashed border-slate-200">
+                                            <div className="text-center py-16 text-slate-400 bg-slate-50 rounded-xl border border-dashed border-slate-300">
                                                 目前還沒有任何使用者註冊紀錄。
                                             </div>
                                         ) : (
                                             Object.keys(groupedStats).sort().map(groupName => (
-                                                <div key={groupName} className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
-                                                    <div className="bg-slate-50 px-6 py-3 border-b border-slate-200 flex justify-between items-center">
-                                                        <h4 className="font-bold text-slate-800 flex items-center gap-2">
-                                                            <i className="fa-solid fa-users text-nature-600"></i> {groupName}
+                                                <div key={groupName} className="bg-white rounded-xl shadow-sm border border-winblue-100 overflow-hidden">
+                                                    <div className="bg-winblue-50/60 px-6 py-3 border-b border-winblue-200 flex justify-between items-center">
+                                                        <h4 className="font-bold text-winblue-950 flex items-center gap-2">
+                                                            <i className="fa-solid fa-users text-winblue-700"></i> {groupName}
                                                         </h4>
-                                                        <span className="bg-nature-600 text-white text-xs px-2.5 py-1 rounded-full font-bold">
+                                                        <span className="bg-winblue-800 text-white text-xs px-2.5 py-1 rounded-full font-bold">
                                                             {groupedStats[groupName].length} 人
                                                         </span>
                                                     </div>
                                                     <div className="divide-y divide-slate-100">
                                                         {groupedStats[groupName].sort((a,b) => (b.completedCount||0) - (a.completedCount||0)).map((user, idx) => (
-                                                            <div key={idx} className="flex justify-between items-center p-4 hover:bg-slate-50/80 transition">
+                                                            <div key={idx} className="flex justify-between items-center p-4 hover:bg-winblue-50/30 transition">
                                                                 <div className="font-medium text-slate-700">
-                                                                    {user.username} {user.notificationsEnabled && <i className="fa-solid fa-bell text-blue-500 ml-1.5 text-xs" title="已開啟推播"></i>}
+                                                                    {user.username} {user.notificationsEnabled && <i className="fa-solid fa-bell text-winblue-600 ml-1.5 text-xs" title="已開啟推播"></i>}
                                                                 </div>
                                                                 <div className="text-sm flex items-center gap-4">
                                                                     <span className="text-slate-400 text-xs hidden md:inline">最後活動: {user.lastActive ? user.lastActive.substring(0,10) : '無紀錄'}</span>
@@ -474,17 +542,31 @@
 
                                 {/* Tab 2: 發布通告 */}
                                 {activeTab === 'publish' && (
-                                    <div className="max-w-2xl mx-auto bg-white p-6 md:p-8 rounded-2xl shadow-sm border border-slate-200 animate-fade-in">
-                                        <div className="flex items-center justify-between mb-6 border-b border-slate-100 pb-4">
-                                            <h3 className="font-bold text-lg text-slate-800 border-l-4 border-nature-500 pl-3">
-                                                發布全教會最新通告
+                                    <div className="max-w-2xl mx-auto bg-white p-6 md:p-8 rounded-xl shadow-sm border border-winblue-200 animate-fade-in">
+                                        <div className="flex items-center justify-between mb-6 border-b border-slate-200 pb-4">
+                                            <h3 className="font-bold text-lg text-winblue-950 border-l-4 border-winblue-800 pl-3">
+                                                撰寫並發布全教會最新通告
                                             </h3>
-                                            <span className="text-xs bg-nature-100 text-nature-800 font-bold px-3 py-1 rounded-full">
-                                                即時同步 Firestore
+                                            <span className="text-xs bg-winblue-100 text-winblue-900 font-bold px-3 py-1 rounded-full">
+                                                即時寫入 Firestore
                                             </span>
                                         </div>
 
                                         <form onSubmit={handlePublishNotification} className="space-y-5">
+                                            <div>
+                                                <label className="block text-sm font-bold text-slate-700 mb-1">
+                                                    發布日期與時間 <span className="text-red-500">*</span>
+                                                </label>
+                                                <input 
+                                                    type="datetime-local" 
+                                                    value={notifDateLocal} 
+                                                    onChange={e => setNotifDateLocal(e.target.value)} 
+                                                    className="w-full p-3.5 border border-slate-300 rounded-xl focus:outline-none focus:border-winblue-600 bg-slate-50 font-medium text-slate-800" 
+                                                    required 
+                                                />
+                                                <p className="text-xs text-slate-400 mt-1">系統將自動轉換為 ISO 8601 時間格式存入 Firestore 的 createdAt 欄位。</p>
+                                            </div>
+
                                             <div>
                                                 <label className="block text-sm font-bold text-slate-700 mb-1">
                                                     通告標題 <span className="text-red-500">*</span>
@@ -494,7 +576,7 @@
                                                     value={notifTitle} 
                                                     onChange={e => setNotifTitle(e.target.value)} 
                                                     placeholder="例如：主日崇拜特別安排 / 颱風防範通知" 
-                                                    className="w-full p-3.5 border border-slate-200 rounded-xl focus:outline-none focus:border-nature-500 bg-slate-50/50 font-medium" 
+                                                    className="w-full p-3.5 border border-slate-300 rounded-xl focus:outline-none focus:border-winblue-600 bg-slate-50 font-medium" 
                                                     required 
                                                 />
                                             </div>
@@ -508,7 +590,7 @@
                                                     onChange={e => setNotifBody(e.target.value)} 
                                                     rows="5" 
                                                     placeholder="請輸入欲發布給會友的詳細通告文字內容..." 
-                                                    className="w-full p-3.5 border border-slate-200 rounded-xl focus:outline-none focus:border-nature-500 bg-slate-50/50 leading-relaxed font-medium" 
+                                                    className="w-full p-3.5 border border-slate-300 rounded-xl focus:outline-none focus:border-winblue-600 bg-slate-50 leading-relaxed font-medium" 
                                                     required 
                                                 ></textarea>
                                             </div>
@@ -522,53 +604,106 @@
                                                     value={notifUrl} 
                                                     onChange={e => setNotifUrl(e.target.value)} 
                                                     placeholder="例如：?date=2026-08-23 或 外部網址 https://..." 
-                                                    className="w-full p-3.5 border border-slate-200 rounded-xl focus:outline-none focus:border-nature-500 bg-slate-50/50 text-sm" 
+                                                    className="w-full p-3.5 border border-slate-300 rounded-xl focus:outline-none focus:border-winblue-600 bg-slate-50 text-sm" 
                                                 />
                                                 <p className="text-xs text-slate-400 mt-1.5">
-                                                    💡 填入 <code className="bg-slate-100 px-1 rounded">?date=YYYY-MM-DD</code>，會友點擊通告即可秒速跳轉至該日期的經文動態！
+                                                    💡 填入 <code className="bg-slate-100 px-1 rounded border">?date=YYYY-MM-DD</code>，會友點擊通告即可秒速跳轉至該日期的經文動態！
                                                 </p>
                                             </div>
 
+                                            {/* 🟢 按鈕渲染修正：明確標示文字 */}
                                             <button 
                                                 type="submit" 
                                                 disabled={publishing} 
-                                                className="w-full bg-nature-600 hover:bg-nature-700 text-white font-bold py-4 rounded-xl transition-all shadow-md active:scale-95 disabled:opacity-50 mt-6 text-lg flex items-center justify-center gap-2"
+                                                className="w-full bg-winblue-800 hover:bg-winblue-900 text-white font-bold py-4 rounded-xl transition-all shadow-md active:scale-95 disabled:opacity-50 mt-6 text-lg flex items-center justify-center gap-2 border border-winblue-950"
                                             >
                                                 {publishing ? (
                                                     <><i className="fa-solid fa-spinner fa-spin"></i> 發布中...</>
                                                 ) : (
-                                                    <><i className="fa-solid fa-paper-plane"></i> 確認發布通告至 Firestore</>
+                                                    <><i className="fa-solid fa-paper-plane"></i> 發布至月曆網頁</>
                                                 )}
                                             </button>
                                         </form>
                                     </div>
                                 )}
 
-                                {/* Tab 3: 小組設定 */}
+                                {/* 🟢 Tab 3: 管理/刪除通告 */}
+                                {activeTab === 'manageNotifs' && (
+                                    <div className="space-y-6 animate-fade-in">
+                                        <div className="flex justify-between items-center bg-winblue-50 p-6 rounded-xl border border-winblue-200">
+                                            <div>
+                                                <h3 className="font-bold text-winblue-950 text-lg">歷史通告管理</h3>
+                                                <p className="text-xs text-winblue-800 mt-1">目前 Firestore 中共有 {existingNotifs.length} 則已發布的通告</p>
+                                            </div>
+                                        </div>
+
+                                        {loadingNotifs ? (
+                                            <div className="text-center py-20 text-slate-400">
+                                                <i className="fa-solid fa-spinner fa-spin text-3xl mb-3 block text-winblue-800"></i>
+                                                載入歷史通告列表中...
+                                            </div>
+                                        ) : existingNotifs.length === 0 ? (
+                                            <div className="text-center py-16 text-slate-400 bg-slate-50 rounded-xl border border-dashed border-slate-300">
+                                                目前資料庫中沒有任何通告紀錄。
+                                            </div>
+                                        ) : (
+                                            <div className="space-y-4">
+                                                {existingNotifs.map((item) => {
+                                                    const dateStr = item.createdAt ? new Date(item.createdAt).toLocaleString('zh-HK', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }) : '無時間紀錄';
+                                                    return (
+                                                        <div key={item.id} className="bg-white rounded-xl p-6 shadow-sm border border-slate-200 hover:border-winblue-400 transition relative flex flex-col md:flex-row justify-between md:items-center gap-4">
+                                                            <div className="space-y-2 flex-1">
+                                                                <div className="flex items-center gap-3">
+                                                                    <span className="bg-winblue-100 text-winblue-900 text-xs px-3 py-1 rounded-full font-bold shrink-0">
+                                                                        {dateStr}
+                                                                    </span>
+                                                                    <h4 className="font-bold text-slate-800 text-base">{item.title || '（無標題）'}</h4>
+                                                                </div>
+                                                                <p className="text-sm text-slate-600 leading-relaxed whitespace-pre-wrap pl-2 border-l-2 border-winblue-200">
+                                                                    {item.body}
+                                                                </p>
+                                                                {item.url && <p className="text-xs text-winblue-700 font-mono">連結: {item.url}</p>}
+                                                            </div>
+
+                                                            <button 
+                                                                onClick={() => handleDeleteNotification(item.id, item.title)}
+                                                                className="bg-red-50 hover:bg-red-600 text-red-600 hover:text-white font-bold px-4 py-2.5 rounded-xl transition border border-red-200 flex items-center justify-center gap-2 text-sm shrink-0"
+                                                            >
+                                                                <i className="fa-solid fa-trash-can"></i> 刪除通告
+                                                            </button>
+                                                        </div>
+                                                    );
+                                                })}
+                                            </div>
+                                        )}
+                                    </div>
+                                )}
+
+                                {/* Tab 4: 小組設定 */}
                                 {activeTab === 'settings' && (
                                     <div className="max-w-2xl mx-auto space-y-8 animate-fade-in">
-                                        <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
-                                            <h3 className="font-bold text-lg mb-4 text-slate-800 border-l-4 border-nature-500 pl-3">新增小組 / 身份類別</h3>
+                                        <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
+                                            <h3 className="font-bold text-lg mb-4 text-winblue-950 border-l-4 border-winblue-800 pl-3">新增小組 / 身份類別</h3>
                                             <div className="flex gap-2">
                                                 <input 
                                                     type="text" 
                                                     value={newGroup} 
                                                     onChange={e=>setNewGroup(e.target.value)} 
                                                     placeholder="例如：約書亞團契" 
-                                                    className="flex-1 p-3 border border-slate-200 rounded-xl focus:outline-none focus:border-nature-500" 
+                                                    className="flex-1 p-3 border border-slate-300 rounded-xl focus:outline-none focus:border-winblue-600" 
                                                 />
-                                                <button onClick={handleAddGroup} className="bg-nature-600 text-white px-6 font-bold rounded-xl hover:bg-nature-700 transition">新增</button>
+                                                <button onClick={handleAddGroup} className="bg-winblue-800 text-white px-6 font-bold rounded-xl hover:bg-winblue-900 transition border border-winblue-950">新增</button>
                                             </div>
                                             <p className="text-xs text-slate-400 mt-2">新增後，前台會友在首次登記選單中將可以直接選擇此小組。</p>
                                         </div>
 
-                                        <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
-                                            <h3 className="font-bold text-lg mb-4 text-slate-800 border-l-4 border-nature-500 pl-3">現有小組列表</h3>
+                                        <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
+                                            <h3 className="font-bold text-lg mb-4 text-winblue-950 border-l-4 border-winblue-800 pl-3">現有小組列表</h3>
                                             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                                                 {appSettings.groups.map(g => (
                                                     <div key={g} className="flex justify-between items-center bg-slate-50 p-3 rounded-xl border border-slate-200">
                                                         <span className="font-medium text-slate-700">{g}</span>
-                                                        <button onClick={() => handleRemoveGroup(g)} className="text-red-400 hover:text-red-600 hover:bg-red-50 p-2 rounded-lg transition" title="刪除小組">
+                                                        <button onClick={() => handleRemoveGroup(g)} className="text-red-500 hover:text-red-700 hover:bg-red-50 p-2 rounded-lg transition" title="刪除小組">
                                                             <i className="fa-solid fa-trash-can"></i>
                                                         </button>
                                                     </div>
@@ -581,7 +716,7 @@
                         </div>
                     </main>
 
-                    <footer className="py-6 bg-slate-900 text-center text-slate-500 text-xs mt-auto border-t border-slate-800">
+                    <footer className="py-6 bg-winblue-950 text-center text-winblue-200 text-xs mt-auto border-t border-winblue-900">
                         <p>{SITE_CONFIG.footerText}</p>
                     </footer>
                 </div>
