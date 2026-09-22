@@ -91,7 +91,7 @@
             const [errorMsg, setErrorMsg] = useState('');
             const [authLoading, setAuthLoading] = useState(false);
 
-            // 🟢 優化 2：預設分頁改為「發布通告」(publish)
+            // 預設分頁改為「發布通告」(publish)
             const [activeTab, setActiveTab] = useState('publish'); 
             const [newGroup, setNewGroup] = useState('');
             const [usersList, setUsersList] = useState([]);
@@ -116,14 +116,18 @@
                 let unsubscribeAuth = null;
                 const initFirebase = async () => {
                     try {
-                        const appModule = await import("https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js");
-                        const authModule = await import("https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js");
-                        const dbModule = await import("https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js");
+                        // 🟢 終極防護：使用 nativeImport 隱藏 import 語法，防止 Babel 誤觸 require
+                        const nativeImport = new Function('url', 'return import(url)');
+                        const [appModule, authModule, dbModule] = await Promise.all([
+                            nativeImport("https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js"),
+                            nativeImport("https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js"),
+                            nativeImport("https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js")
+                        ]);
                 
+                        // 🟢 徹底移除 databaseURL，切斷對過期 RTDB 的相依
                         const firebaseConfig = {
                             apiKey: "AIzaSyAEMB-eVojfzcUMyKt9JgGK_okPRO2V73g",
                             authDomain: "ccagkc-biblereading-project.firebaseapp.com",
-                            databaseURL: "https://ccagkc-biblereading-project-default-rtdb.asia-southeast1.firebasedatabase.app",
                             projectId: "ccagkc-biblereading-project",
                             storageBucket: "ccagkc-biblereading-project.firebasestorage.app",
                             messagingSenderId: "962459311265",
@@ -165,7 +169,7 @@
                         });
 
                     } catch (e) { 
-                        console.error("Firebase 模組載入失敗", e); 
+                        console.error("Firebase 模組載入失敗:", e); 
                         setLoading(false);
                     }
                 };
@@ -244,13 +248,15 @@
                         if (!snap.exists()) await fb.dbModule.setDoc(ref, { username: '系統管理員', role: 'admin', createdAt: new Date().toISOString() });
                     }
                 } catch (err) { 
-                    setErrorMsg('登入失敗：' + err.message); 
+                    // 🟢 強制印出真實錯誤，不再被模糊提示掩蓋
+                    console.error("管理員登入失敗詳細錯誤:", err);
+                    setErrorMsg(`連線異常 (${err.code || err.message})`); 
                 } finally { 
                     setAuthLoading(false); 
                 }
             };
 
-            // 🟢 優化 1：安全登出處理 (強制清空密碼與狀態)
+            // 安全登出處理 (強制清空密碼與狀態)
             const handleSignOut = async () => {
                 if (fb && fb.auth) {
                     try {
@@ -459,7 +465,6 @@
                                 </div>
                             </div>
 
-                            {/* 🟢 優化 1：呼叫 handleSignOut 安全清空密碼 */}
                             <button 
                                 onClick={handleSignOut} 
                                 className="bg-winblue-950 hover:bg-red-700 text-winblue-100 hover:text-white px-4 py-2 rounded-lg text-xs font-bold transition border border-winblue-700 flex items-center gap-2 shadow-sm"
@@ -471,7 +476,7 @@
 
                     <main className="flex-grow p-4 md:p-8 max-w-6xl mx-auto w-full">
                         <div className="bg-white rounded-2xl shadow-win border border-winblue-200 overflow-hidden min-h-[75vh]">
-                            {/* 🟢 優化 2：Windows 風格選單 (發布通告與管理通告移至第一及第二順位) */}
+                            {/* Windows 風格選單 (發布通告與管理通告移至第一及第二順位) */}
                             <div className="flex flex-wrap border-b-2 border-winblue-200 bg-winblue-50/80">
                                 <button 
                                     onClick={() => setActiveTab('publish')} 
@@ -500,7 +505,7 @@
                             </div>
 
                             <div className="p-6 md:p-8">
-                                {/* 🟢 順位 1：發布通告 */}
+                                {/* 順位 1：發布通告 */}
                                 {activeTab === 'publish' && (
                                     <div className="max-w-2xl mx-auto bg-white p-6 md:p-8 rounded-xl shadow-sm border border-winblue-200 animate-fade-in">
                                         <div className="flex items-center justify-between mb-6 border-b border-slate-200 pb-4">
@@ -586,7 +591,7 @@
                                     </div>
                                 )}
 
-                                {/* 🟢 順位 2：管理/刪除通告 */}
+                                {/* 順位 2：管理/刪除通告 */}
                                 {activeTab === 'manageNotifs' && (
                                     <div className="space-y-6 animate-fade-in">
                                         <div className="flex justify-between items-center bg-winblue-50 p-6 rounded-xl border border-winblue-200">
@@ -638,7 +643,7 @@
                                     </div>
                                 )}
 
-                                {/* 🟢 順位 3：數據統計 */}
+                                {/* 順位 3：數據統計 */}
                                 {activeTab === 'stats' && (
                                     <div className="animate-fade-in space-y-6">
                                         <div className="flex flex-col md:flex-row justify-between items-start md:items-center bg-winblue-50 p-6 rounded-xl border border-winblue-200 gap-4">
@@ -696,7 +701,7 @@
                                     </div>
                                 )}
 
-                                {/* 🟢 順位 4：小組設定 */}
+                                {/* 順位 4：小組設定 */}
                                 {activeTab === 'settings' && (
                                     <div className="max-w-2xl mx-auto space-y-8 animate-fade-in">
                                         <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
