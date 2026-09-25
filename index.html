@@ -85,26 +85,23 @@
 
             const [appSettings, setAppSettings] = useState({ groups: ['未入組/其他', '少年崇拜', '奇行組', 'IMA組', '加利利奮青', '彼得組', '隨意行組', '葡萄果組', 'Spectrum組', '家靈一組', '7-11組', '清心組', 'ReConnect組', '基順ECO組', '蜜組', '喜樂組'] });
 
-            // 登入 State
             const [password, setPassword] = useState('');
             const [isRegister, setIsRegister] = useState(false);
             const [errorMsg, setErrorMsg] = useState('');
             const [authLoading, setAuthLoading] = useState(false);
 
-            // 預設分頁改為「發布通告」(publish)
             const [activeTab, setActiveTab] = useState('publish'); 
             const [newGroup, setNewGroup] = useState('');
+            const [inviteCodeInput, setInviteCodeInput] = useState(''); // 🟢 邀請碼狀態
             const [usersList, setUsersList] = useState([]);
             const [loadingStats, setLoadingStats] = useState(false);
 
-            // 發布通告 State
             const [notifTitle, setNotifTitle] = useState('');
             const [notifBody, setNotifBody] = useState('');
             const [notifUrl, setNotifUrl] = useState('');
             const [notifDateLocal, setNotifDateLocal] = useState(getCurrentDateTimeLocal());
             const [publishing, setPublishing] = useState(false);
 
-            // 管理/刪除通告 State
             const [existingNotifs, setExistingNotifs] = useState([]);
             const [loadingNotifs, setLoadingStatsNotifs] = useState(false);
 
@@ -112,11 +109,19 @@
             let unsubscribeProfile = useRef(null);
             let unsubscribeNotifList = useRef(null);
 
+            // 🟢 將系統的邀請碼同步到輸入框顯示
+            useEffect(() => {
+                if (appSettings?.inviteCode) {
+                    setInviteCodeInput(appSettings.inviteCode);
+                } else if (appSettings && !appSettings.inviteCode) {
+                    setInviteCodeInput('KCC2026'); // 預設值
+                }
+            }, [appSettings]);
+
             useEffect(() => {
                 let unsubscribeAuth = null;
                 const initFirebase = async () => {
                     try {
-                        // 🟢 終極防護：使用 nativeImport 隱藏 import 語法，防止 Babel 誤觸 require
                         const nativeImport = new Function('url', 'return import(url)');
                         const [appModule, authModule, dbModule] = await Promise.all([
                             nativeImport("https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js"),
@@ -124,7 +129,6 @@
                             nativeImport("https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js")
                         ]);
                 
-                        // 🟢 徹底移除 databaseURL，切斷對過期 RTDB 的相依
                         const firebaseConfig = {
                             apiKey: "AIzaSyAEMB-eVojfzcUMyKt9JgGK_okPRO2V73g",
                             authDomain: "ccagkc-biblereading-project.firebaseapp.com",
@@ -183,7 +187,6 @@
                 };
             }, []);
 
-            // 抓取會友統計
             useEffect(() => {
                 if (activeTab === 'stats' && fb && currentUser) {
                     setLoadingStats(true);
@@ -207,7 +210,6 @@
                 }
             }, [activeTab, fb, currentUser]);
 
-            // 實時載入已發布通告（用於刪除與管理）
             useEffect(() => {
                 if (activeTab === 'manageNotifs' && fb && currentUser) {
                     setLoadingStatsNotifs(true);
@@ -248,7 +250,6 @@
                         if (!snap.exists()) await fb.dbModule.setDoc(ref, { username: '系統管理員', role: 'admin', createdAt: new Date().toISOString() });
                     }
                 } catch (err) { 
-                    // 🟢 強制印出真實錯誤，不再被模糊提示掩蓋
                     console.error("管理員登入失敗詳細錯誤:", err);
                     setErrorMsg(`連線異常 (${err.code || err.message})`); 
                 } finally { 
@@ -256,7 +257,6 @@
                 }
             };
 
-            // 安全登出處理 (強制清空密碼與狀態)
             const handleSignOut = async () => {
                 if (fb && fb.auth) {
                     try {
@@ -270,6 +270,18 @@
                 setCurrentUser(null);
                 setUserProfile(null);
                 setActiveTab('publish');
+            };
+
+            // 🟢 新增：更新邀請碼功能
+            const handleUpdateInviteCode = async () => {
+                if (!inviteCodeInput.trim()) return alert('邀請碼不能為空！');
+                try {
+                    const settingsRef = fb.dbModule.doc(fb.db, 'artifacts', fb.appId, 'public', 'data', 'settings', 'general');
+                    await fb.dbModule.setDoc(settingsRef, { inviteCode: inviteCodeInput.trim().toUpperCase() }, { merge: true });
+                    alert('✅ 系統邀請碼已成功更新！前台會友註冊時將立刻生效。');
+                } catch (err) {
+                    alert('更新失敗：' + err.message);
+                }
             };
 
             const handleAddGroup = async () => {
@@ -320,7 +332,6 @@
                 URL.revokeObjectURL(url);
             };
 
-            // 發布通知：含自訂 ISO 時間轉換
             const handlePublishNotification = async (e) => {
                 e.preventDefault();
                 if (!notifTitle.trim() || !notifBody.trim()) {
@@ -358,7 +369,6 @@
                 }
             };
 
-            // 刪除通告邏輯
             const handleDeleteNotification = async (docId, title) => {
                 if (!confirm(`⚠️ 確定要刪除這則通告嗎？\n\n標題：「${title}」\n\n刪除後全教會會友的手機將無法再查閱此通告！`)) {
                     return;
@@ -391,7 +401,6 @@
                 </div>
             );
 
-            // 未登入管理員畫面 (Windows 傳統湛藍主題)
             if (!currentUser) {
                 return (
                     <div className="min-h-screen flex items-center justify-center p-4 bg-winblue-950">
@@ -449,10 +458,8 @@
                 );
             }
 
-            // 已登入 Dashboard
             return (
                 <div className="min-h-screen flex flex-col bg-slate-200 font-sans">
-                    {/* Header: Windows 皇家藍 */}
                     <header className="bg-winblue-900 text-white p-5 shadow-lg border-b-4 border-winblue-600 sticky top-0 z-50">
                         <div className="max-w-6xl mx-auto flex justify-between items-center">
                             <div className="flex items-center gap-3">
@@ -476,7 +483,6 @@
 
                     <main className="flex-grow p-4 md:p-8 max-w-6xl mx-auto w-full">
                         <div className="bg-white rounded-2xl shadow-win border border-winblue-200 overflow-hidden min-h-[75vh]">
-                            {/* Windows 風格選單 (發布通告與管理通告移至第一及第二順位) */}
                             <div className="flex flex-wrap border-b-2 border-winblue-200 bg-winblue-50/80">
                                 <button 
                                     onClick={() => setActiveTab('publish')} 
@@ -500,7 +506,7 @@
                                     onClick={() => setActiveTab('settings')} 
                                     className={`flex-1 min-w-[140px] py-3.5 px-4 font-bold transition flex items-center justify-center gap-2 text-sm ${activeTab === 'settings' ? 'bg-white text-winblue-900 border-b-2 border-winblue-800 shadow-sm' : 'text-slate-600 hover:bg-winblue-100/60'}`}
                                 >
-                                    <i className="fa-solid fa-users-gear text-winblue-600"></i> 小組設定
+                                    <i className="fa-solid fa-users-gear text-winblue-600"></i> 系統與小組設定
                                 </button>
                             </div>
 
@@ -704,6 +710,23 @@
                                 {/* 順位 4：小組設定 */}
                                 {activeTab === 'settings' && (
                                     <div className="max-w-2xl mx-auto space-y-8 animate-fade-in">
+                                        
+                                        {/* 🟢 新增：系統註冊邀請碼設定 */}
+                                        <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
+                                            <h3 className="font-bold text-lg mb-4 text-winblue-950 border-l-4 border-winblue-800 pl-3">系統註冊邀請碼設定</h3>
+                                            <div className="flex gap-2">
+                                                <input 
+                                                    type="text" 
+                                                    value={inviteCodeInput} 
+                                                    onChange={e=>setInviteCodeInput(e.target.value)} 
+                                                    placeholder="請設定新邀請碼" 
+                                                    className="flex-1 p-3 border border-slate-300 rounded-xl focus:outline-none focus:border-winblue-600 uppercase font-bold tracking-widest text-winblue-900" 
+                                                />
+                                                <button onClick={handleUpdateInviteCode} className="bg-winblue-800 text-white px-6 font-bold rounded-xl hover:bg-winblue-900 transition border border-winblue-950">更新邀請碼</button>
+                                            </div>
+                                            <p className="text-xs text-slate-400 mt-2">新會友在首次登記時，必須輸入此密碼才能成功註冊。修改後立即生效。</p>
+                                        </div>
+
                                         <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
                                             <h3 className="font-bold text-lg mb-4 text-winblue-950 border-l-4 border-winblue-800 pl-3">新增小組 / 身份類別</h3>
                                             <div className="flex gap-2">
@@ -732,6 +755,7 @@
                                                 ))}
                                             </div>
                                         </div>
+
                                     </div>
                                 )}
                             </div>
