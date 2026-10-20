@@ -11,10 +11,8 @@
     <meta http-equiv="Expires" content="0">
     <meta name="robots" content="noindex, nofollow">
 
-    <!-- 移除了必定報錯的相對路徑 manifest 與 style.css，全站改用 Tailwind 內建樣式控制 -->
     <meta name="theme-color" content="#1e3a8a">
     <style>
-        /* 補回原本 style.css 中的輕量全域樣式設定 */
         body { -webkit-tap-highlight-color: transparent; }
         ::-webkit-scrollbar { width: 6px; }
         ::-webkit-scrollbar-track { background: transparent; }
@@ -110,7 +108,11 @@
 
             const [notifTitle, setNotifTitle] = useState('');
             const [notifBody, setNotifBody] = useState('');
-            const [notifUrl, setNotifUrl] = useState('');
+            
+            // 🟢 將單一 URL 拆分為報名連結與相關專頁連結
+            const [notifRegUrl, setNotifRegUrl] = useState('');
+            const [notifPageUrl, setNotifPageUrl] = useState('');
+            
             const [notifDateLocal, setNotifDateLocal] = useState(getCurrentDateTimeLocal());
             const [publishing, setPublishing] = useState(false);
             
@@ -323,7 +325,8 @@
             const clearEditState = () => {
                 setNotifTitle('');
                 setNotifBody('');
-                setNotifUrl('');
+                setNotifRegUrl('');
+                setNotifPageUrl('');
                 setNotifDateLocal(getCurrentDateTimeLocal());
                 setEditingNotifId(null);
             };
@@ -338,7 +341,13 @@
             const handleEditClick = (item) => {
                 setNotifTitle(item.title || '');
                 setNotifBody(item.body || '');
-                setNotifUrl(item.url || '');
+                // 🟢 支援舊版資料結構轉換
+                if (item.url && !item.regUrl && !item.pageUrl) {
+                    setNotifPageUrl(item.url); 
+                } else {
+                    setNotifRegUrl(item.regUrl || '');
+                    setNotifPageUrl(item.pageUrl || '');
+                }
                 setNotifDateLocal(formatIsoToDateTimeLocal(item.createdAt));
                 setEditingNotifId(item.id);
                 setActiveTab('publish');
@@ -355,17 +364,20 @@
                 setPublishing(true);
                 try {
                     const isoCreatedAt = new Date(notifDateLocal).toISOString();
+                    // 🟢 寫入雙連結結構
                     const notifData = {
                         title: notifTitle.trim(),
                         body: notifBody.trim(),
-                        url: notifUrl.trim() || '',
+                        regUrl: notifRegUrl.trim() || '',
+                        pageUrl: notifPageUrl.trim() || '',
                         createdAt: isoCreatedAt,
                         publisher: userProfile?.username || '系統管理員'
                     };
 
                     if (editingNotifId) {
                         const docRef = fb.dbModule.doc(fb.db, 'artifacts', fb.appId, 'public', 'data', 'notifications', editingNotifId);
-                        await fb.dbModule.setDoc(docRef, notifData, { merge: true });
+                        // 更新時若舊資料有 url 欄位，可透過置換為空值來覆蓋，確保乾淨
+                        await fb.dbModule.setDoc(docRef, { ...notifData, url: fb.dbModule.deleteField() }, { merge: true });
                         alert('✅ 通告已成功修改，並即刻於會友月曆上更新！');
                     } else {
                         const notifCol = fb.dbModule.collection(fb.db, 'artifacts', fb.appId, 'public', 'data', 'notifications');
@@ -395,12 +407,26 @@
                 }
             };
 
-            const groupedStats = usersList.reduce((acc, user) => {
-                const group = user.group || '未分類';
-                if (!acc[group]) acc[group] = [];
-                acc[group].push(user);
-                return acc;
-            }, {});
+            const getProcessedStats = () => {
+                const grouped = usersList.reduce((acc, user) => {
+                    const group = user.group || '未分類';
+                    if (!acc[group]) acc[group] = [];
+                    acc[group].push(user);
+                    return acc;
+                }, {});
+
+                return Object.keys(grouped).sort().map(groupName => {
+                    const users = grouped[groupName];
+                    const sortedUsers = [...users].sort((a, b) => {
+                        const countA = a.completedCount ? Number(a.completedCount) : 0;
+                        const countB = b.completedCount ? Number(b.completedCount) : 0;
+                        return countB - countA;
+                    });
+                    return { groupName, users: sortedUsers };
+                });
+            };
+
+            const processedStatsData = getProcessedStats();
 
             if (loading) return (
                 <div className="flex-grow flex flex-col items-center justify-center text-winblue-900 bg-slate-200 min-h-screen">
@@ -622,17 +648,35 @@
                                                 ></textarea>
                                             </div>
 
-                                            <div>
-                                                <label className="block text-sm font-bold text-slate-700 mb-1">
-                                                    相關專頁 / 日期連結 (選填)
-                                                </label>
-                                                <input 
-                                                    type="text" 
-                                                    value={notifUrl} 
-                                                    onChange={e => setNotifUrl(e.target.value)} 
-                                                    placeholder="例如：?date=2026-08-23 或 外部網址 https://..." 
-                                                    className="w-full p-3.5 border border-slate-300 rounded-xl focus:outline-none focus:border-winblue-600 bg-slate-50 text-sm" 
-                                                />
+                                            {/* 🟢 拆分為兩個獨立的連結輸入框 */}
+                                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                                <div className="bg-slate-50 p-4 rounded-xl border border-slate-200">
+                                                    <label className="block text-sm font-bold text-emerald-700 mb-1">
+                                                        <i className="fa-solid fa-file-signature mr-1"></i> 報名表連結 (選填)
+                                                    </label>
+                                                    <input 
+                                                        type="text" 
+                                                        value={notifRegUrl} 
+                                                        onChange={e => setNotifRegUrl(e.target.value)} 
+                                                        placeholder="例如：Google Form 網址" 
+                                                        className="w-full p-3 border border-slate-300 rounded-lg focus:outline-none focus:border-emerald-500 text-sm bg-white" 
+                                                    />
+                                                    <p className="text-[11px] text-slate-400 mt-1.5 leading-tight">若填寫此欄位，通告下方將會出現醒目的「前往報名」按鈕。</p>
+                                                </div>
+
+                                                <div className="bg-slate-50 p-4 rounded-xl border border-slate-200">
+                                                    <label className="block text-sm font-bold text-winblue-700 mb-1">
+                                                        <i className="fa-solid fa-link mr-1"></i> 相關專頁連結 (選填)
+                                                    </label>
+                                                    <input 
+                                                        type="text" 
+                                                        value={notifPageUrl} 
+                                                        onChange={e => setNotifPageUrl(e.target.value)} 
+                                                        placeholder="外部網址 或 ?date=YYYY-MM-DD" 
+                                                        className="w-full p-3 border border-slate-300 rounded-lg focus:outline-none focus:border-winblue-500 text-sm bg-white" 
+                                                    />
+                                                    <p className="text-[11px] text-slate-400 mt-1.5 leading-tight">可填寫 YouTube 直播網址，或輸入 <code>?date=...</code> 跳轉月曆。</p>
+                                                </div>
                                             </div>
 
                                             <button 
@@ -675,6 +719,11 @@
                                             <div className="space-y-4">
                                                 {existingNotifs.map((item) => {
                                                     const dateStr = item.createdAt ? new Date(item.createdAt).toLocaleString('zh-HK', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }) : '無時間紀錄';
+                                                    
+                                                    // 🟢 相容舊版 url 與新版 regUrl/pageUrl
+                                                    const hasRegUrl = !!item.regUrl;
+                                                    const hasPageUrl = !!item.pageUrl || !!item.url;
+
                                                     return (
                                                         <div key={item.id} className="bg-white rounded-xl p-6 shadow-sm border border-slate-200 hover:border-winblue-400 transition relative flex flex-col md:flex-row justify-between md:items-center gap-4">
                                                             <div className="space-y-2 flex-1">
@@ -684,10 +733,15 @@
                                                                     </span>
                                                                     <h4 className="font-bold text-slate-800 text-base">{item.title || '（無標題）'}</h4>
                                                                 </div>
-                                                                <p className="text-sm text-slate-600 leading-relaxed whitespace-pre-wrap pl-2 border-l-2 border-winblue-200">
+                                                                <p className="text-sm text-slate-600 leading-relaxed whitespace-pre-wrap pl-2 border-l-2 border-slate-200">
                                                                     {item.body}
                                                                 </p>
-                                                                {item.url && <p className="text-xs text-winblue-700 font-mono">連結: {item.url}</p>}
+                                                                
+                                                                {/* 🟢 標籤化顯示擁有的連結類型 */}
+                                                                <div className="flex flex-wrap gap-2 pt-1">
+                                                                    {hasRegUrl && <span className="text-[10px] bg-emerald-50 text-emerald-700 border border-emerald-200 px-2 py-0.5 rounded font-bold"><i className="fa-solid fa-file-signature mr-1"></i>已附報名表</span>}
+                                                                    {hasPageUrl && <span className="text-[10px] bg-winblue-50 text-winblue-700 border border-winblue-200 px-2 py-0.5 rounded font-bold"><i className="fa-solid fa-link mr-1"></i>已附相關專頁</span>}
+                                                                </div>
                                                             </div>
 
                                                             <div className="flex gap-2 shrink-0">
@@ -712,7 +766,7 @@
                                     </div>
                                 )}
 
-                                {/* 參與統計 (完美解耦修復 Babel 解析錯誤) */}
+                                {/* 參與統計 */}
                                 {activeTab === 'stats' && (
                                     <div className="animate-fade-in space-y-6">
                                         <div className="flex flex-col md:flex-row justify-between items-start md:items-center bg-winblue-50 p-6 rounded-xl border border-winblue-200 gap-4">
@@ -734,43 +788,38 @@
                                                 <i className="fa-solid fa-spinner fa-spin text-3xl mb-3 block text-winblue-800"></i>
                                                 載入會友數據中...
                                             </div>
-                                        ) : Object.keys(groupedStats).length === 0 ? (
+                                        ) : processedStatsData.length === 0 ? (
                                             <div className="text-center py-16 text-slate-400 bg-slate-50 rounded-xl border border-dashed border-slate-300">
                                                 目前還沒有任何使用者註冊紀錄。
                                             </div>
                                         ) : (
-                                            Object.keys(groupedStats).sort().map(groupName => {
-                                                /* 🟢 專家解法：將排序陣列提出 JSX 標籤外，完美避開 Babel 行內編譯 Bug */
-                                                const sortedUsers = [...groupedStats[groupName]].sort((a,b) => (b.completedCount || 0) - (a.completedCount || 0));
-                                                
-                                                return (
-                                                    <div key={groupName} className="bg-white rounded-xl shadow-sm border border-winblue-100 overflow-hidden">
-                                                        <div className="bg-winblue-50/60 px-6 py-3 border-b border-winblue-200 flex justify-between items-center">
-                                                            <h4 className="font-bold text-winblue-950 flex items-center gap-2">
-                                                                <i className="fa-solid fa-users text-winblue-700"></i> {groupName}
-                                                            </h4>
-                                                            <span className="bg-winblue-800 text-white text-xs px-2.5 py-1 rounded-full font-bold">
-                                                                {groupedStats[groupName].length} 人
-                                                            </span>
-                                                        </div>
-                                                        <div className="divide-y divide-slate-100">
-                                                            {sortedUsers.map((user, idx) => (
-                                                                <div key={idx} className="flex justify-between items-center p-4 hover:bg-winblue-50/30 transition">
-                                                                    <div className="font-medium text-slate-700">
-                                                                        {user.username} {user.notificationsEnabled && <i className="fa-solid fa-bell text-winblue-600 ml-1.5 text-xs" title="已開啟推播"></i>}
-                                                                    </div>
-                                                                    <div className="text-sm flex items-center gap-4">
-                                                                        <span className="text-slate-400 text-xs hidden md:inline">最後活動: {user.lastActive ? user.lastActive.substring(0,10) : '無紀錄'}</span>
-                                                                        <span className="bg-emerald-50 text-emerald-700 border border-emerald-200 px-3 py-1 rounded-lg font-bold">
-                                                                            已讀 {user.completedCount || 0} 天
-                                                                        </span>
-                                                                    </div>
-                                                                </div>
-                                                            ))}
-                                                        </div>
+                                            processedStatsData.map(({ groupName, users }) => (
+                                                <div key={groupName} className="bg-white rounded-xl shadow-sm border border-winblue-100 overflow-hidden">
+                                                    <div className="bg-winblue-50/60 px-6 py-3 border-b border-winblue-200 flex justify-between items-center">
+                                                        <h4 className="font-bold text-winblue-950 flex items-center gap-2">
+                                                            <i className="fa-solid fa-users text-winblue-700"></i> {groupName}
+                                                        </h4>
+                                                        <span className="bg-winblue-800 text-white text-xs px-2.5 py-1 rounded-full font-bold">
+                                                            {users.length} 人
+                                                        </span>
                                                     </div>
-                                                );
-                                            })
+                                                    <div className="divide-y divide-slate-100">
+                                                        {users.map((user, idx) => (
+                                                            <div key={idx} className="flex justify-between items-center p-4 hover:bg-winblue-50/30 transition">
+                                                                <div className="font-medium text-slate-700">
+                                                                    {user.username} {user.notificationsEnabled && <i className="fa-solid fa-bell text-winblue-600 ml-1.5 text-xs" title="已開啟推播"></i>}
+                                                                </div>
+                                                                <div className="text-sm flex items-center gap-4">
+                                                                    <span className="text-slate-400 text-xs hidden md:inline">最後活動: {user.lastActive ? user.lastActive.substring(0,10) : '無紀錄'}</span>
+                                                                    <span className="bg-emerald-50 text-emerald-700 border border-emerald-200 px-3 py-1 rounded-lg font-bold">
+                                                                        已讀 {user.completedCount || 0} 天
+                                                                    </span>
+                                                                </div>
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                </div>
+                                            ))
                                         )}
                                     </div>
                                 )}
@@ -818,23 +867,3 @@
                                                         </button>
                                                     </div>
                                                 ))}
-                                            </div>
-                                        </div>
-                                    </div>
-                                )}
-                            </div>
-                        </div>
-                    </main>
-
-                    <footer className="py-6 bg-winblue-950 text-center text-winblue-200 text-xs mt-auto border-t border-winblue-900">
-                        <p>{SITE_CONFIG.footerText}</p>
-                    </footer>
-                </div>
-            );
-        };
-
-        const root = ReactDOM.createRoot(document.getElementById('root'));
-        root.render(<App />);
-    </script>
-</body>
-</html>
