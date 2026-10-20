@@ -11,10 +11,15 @@
     <meta http-equiv="Expires" content="0">
     <meta name="robots" content="noindex, nofollow">
 
-    <link rel="manifest" href="manifest.json">
+    <!-- 移除了必定報錯的相對路徑 manifest 與 style.css，全站改用 Tailwind 內建樣式控制 -->
     <meta name="theme-color" content="#1e3a8a">
-    
-    <link rel="stylesheet" href="style.css?v=6">
+    <style>
+        /* 補回原本 style.css 中的輕量全域樣式設定 */
+        body { -webkit-tap-highlight-color: transparent; }
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
+    </style>
 
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+TC:wght@500;700&family=Noto+Sans+TC:wght@400;500;700&display=swap" rel="stylesheet">
@@ -28,14 +33,9 @@
                     },
                     colors: {
                         winblue: {
-                            50: '#eff6ff',
-                            100: '#dbeafe',
-                            200: '#bfdbfe',
-                            600: '#2563eb',
-                            700: '#1d4ed8',
-                            800: '#1e40af',
-                            900: '#1e3a8a',
-                            950: '#172554'
+                            50: '#eff6ff', 100: '#dbeafe', 200: '#bfdbfe',
+                            600: '#2563eb', 700: '#1d4ed8', 800: '#1e40af',
+                            900: '#1e3a8a', 950: '#172554'
                         }
                     },
                     boxShadow: { 'win': '0 10px 30px -5px rgba(30, 58, 138, 0.2)' },
@@ -65,7 +65,6 @@
         const SITE_CONFIG = {
             adminEmailDomain: "@admin.kcc.app",
             footerText: "© CCAGKC · CHURCH CALENDAR ADMIN SYSTEM",
-            // 🟢 將 Google Sheet 網址定義在系統設定區塊，方便未來維護
             googleSheetUrl: "https://docs.google.com/spreadsheets/d/1_FfNhrUwgI3l0vOpDqWfooAVQUja-Sl-YQOna3nJyQo/edit?usp=sharing"
         };
 
@@ -505,7 +504,6 @@
                                 >
                                     <i className="fa-solid fa-list-check text-winblue-600"></i> 管理通告
                                 </button>
-                                {/* 🟢 新增：內容資料庫 (Google Sheet) 分頁 */}
                                 <button 
                                     onClick={() => handleTabChange('sheetData')} 
                                     className={`flex-1 min-w-[130px] py-3.5 px-3 font-bold transition flex items-center justify-center gap-2 border-r border-winblue-200 text-sm ${activeTab === 'sheetData' ? 'bg-white text-winblue-900 border-b-2 border-winblue-800 shadow-sm' : 'text-slate-600 hover:bg-winblue-100/60'}`}
@@ -528,7 +526,7 @@
 
                             <div className="p-6 md:p-8">
 
-                                {/* 🟢 全新順位：內容資料庫 (Google Sheet 整合) */}
+                                {/* 內容資料庫 (Google Sheet) */}
                                 {activeTab === 'sheetData' && (
                                     <div className="animate-fade-in space-y-6">
                                         <div className="flex flex-col md:flex-row justify-between items-start md:items-center bg-winblue-50 p-6 rounded-xl border border-winblue-200 gap-4">
@@ -714,7 +712,7 @@
                                     </div>
                                 )}
 
-                                {/* 數據統計 */}
+                                {/* 參與統計 (完美解耦修復 Babel 解析錯誤) */}
                                 {activeTab === 'stats' && (
                                     <div className="animate-fade-in space-y-6">
                                         <div className="flex flex-col md:flex-row justify-between items-start md:items-center bg-winblue-50 p-6 rounded-xl border border-winblue-200 gap-4">
@@ -741,15 +739,102 @@
                                                 目前還沒有任何使用者註冊紀錄。
                                             </div>
                                         ) : (
-                                            Object.keys(groupedStats).sort().map(groupName => (
-                                                <div key={groupName} className="bg-white rounded-xl shadow-sm border border-winblue-100 overflow-hidden">
-                                                    <div className="bg-winblue-50/60 px-6 py-3 border-b border-winblue-200 flex justify-between items-center">
-                                                        <h4 className="font-bold text-winblue-950 flex items-center gap-2">
-                                                            <i className="fa-solid fa-users text-winblue-700"></i> {groupName}
-                                                        </h4>
-                                                        <span className="bg-winblue-800 text-white text-xs px-2.5 py-1 rounded-full font-bold">
-                                                            {groupedStats[groupName].length} 人
-                                                        </span>
+                                            Object.keys(groupedStats).sort().map(groupName => {
+                                                /* 🟢 專家解法：將排序陣列提出 JSX 標籤外，完美避開 Babel 行內編譯 Bug */
+                                                const sortedUsers = [...groupedStats[groupName]].sort((a,b) => (b.completedCount || 0) - (a.completedCount || 0));
+                                                
+                                                return (
+                                                    <div key={groupName} className="bg-white rounded-xl shadow-sm border border-winblue-100 overflow-hidden">
+                                                        <div className="bg-winblue-50/60 px-6 py-3 border-b border-winblue-200 flex justify-between items-center">
+                                                            <h4 className="font-bold text-winblue-950 flex items-center gap-2">
+                                                                <i className="fa-solid fa-users text-winblue-700"></i> {groupName}
+                                                            </h4>
+                                                            <span className="bg-winblue-800 text-white text-xs px-2.5 py-1 rounded-full font-bold">
+                                                                {groupedStats[groupName].length} 人
+                                                            </span>
+                                                        </div>
+                                                        <div className="divide-y divide-slate-100">
+                                                            {sortedUsers.map((user, idx) => (
+                                                                <div key={idx} className="flex justify-between items-center p-4 hover:bg-winblue-50/30 transition">
+                                                                    <div className="font-medium text-slate-700">
+                                                                        {user.username} {user.notificationsEnabled && <i className="fa-solid fa-bell text-winblue-600 ml-1.5 text-xs" title="已開啟推播"></i>}
+                                                                    </div>
+                                                                    <div className="text-sm flex items-center gap-4">
+                                                                        <span className="text-slate-400 text-xs hidden md:inline">最後活動: {user.lastActive ? user.lastActive.substring(0,10) : '無紀錄'}</span>
+                                                                        <span className="bg-emerald-50 text-emerald-700 border border-emerald-200 px-3 py-1 rounded-lg font-bold">
+                                                                            已讀 {user.completedCount || 0} 天
+                                                                        </span>
+                                                                    </div>
+                                                                </div>
+                                                            ))}
+                                                        </div>
                                                     </div>
-                                                    <div className="divide-y divide-slate-100">
-                                                        {groupedStats[groupName].sort((a,b) => (b.completedCount||0) -
+                                                );
+                                            })
+                                        )}
+                                    </div>
+                                )}
+
+                                {/* 小組設定 */}
+                                {activeTab === 'settings' && (
+                                    <div className="max-w-2xl mx-auto space-y-8 animate-fade-in">
+                                        <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
+                                            <h3 className="font-bold text-lg mb-4 text-winblue-950 border-l-4 border-winblue-800 pl-3">系統註冊邀請碼設定</h3>
+                                            <div className="flex gap-2">
+                                                <input 
+                                                    type="text" 
+                                                    value={inviteCodeInput} 
+                                                    onChange={e=>setInviteCodeInput(e.target.value)} 
+                                                    placeholder="請設定新邀請碼" 
+                                                    className="flex-1 p-3 border border-slate-300 rounded-xl focus:outline-none focus:border-winblue-600 uppercase font-bold tracking-widest text-winblue-900" 
+                                                />
+                                                <button onClick={handleUpdateInviteCode} className="bg-winblue-800 text-white px-6 font-bold rounded-xl hover:bg-winblue-900 transition border border-winblue-950">更新邀請碼</button>
+                                            </div>
+                                            <p className="text-xs text-slate-400 mt-2">新會友在首次登記時，必須輸入此密碼才能成功註冊。修改後立即生效。</p>
+                                        </div>
+
+                                        <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
+                                            <h3 className="font-bold text-lg mb-4 text-winblue-950 border-l-4 border-winblue-800 pl-3">新增小組 / 身份類別</h3>
+                                            <div className="flex gap-2">
+                                                <input 
+                                                    type="text" 
+                                                    value={newGroup} 
+                                                    onChange={e=>setNewGroup(e.target.value)} 
+                                                    placeholder="例如：約書亞團契" 
+                                                    className="flex-1 p-3 border border-slate-300 rounded-xl focus:outline-none focus:border-winblue-600" 
+                                                />
+                                                <button onClick={handleAddGroup} className="bg-winblue-800 text-white px-6 font-bold rounded-xl hover:bg-winblue-900 transition border border-winblue-950">新增</button>
+                                            </div>
+                                        </div>
+
+                                        <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
+                                            <h3 className="font-bold text-lg mb-4 text-winblue-950 border-l-4 border-winblue-800 pl-3">現有小組列表</h3>
+                                            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                                {appSettings.groups.map(g => (
+                                                    <div key={g} className="flex justify-between items-center bg-slate-50 p-3 rounded-xl border border-slate-200">
+                                                        <span className="font-medium text-slate-700">{g}</span>
+                                                        <button onClick={() => handleRemoveGroup(g)} className="text-red-500 hover:text-red-700 hover:bg-red-50 p-2 rounded-lg transition" title="刪除小組">
+                                                            <i className="fa-solid fa-trash-can"></i>
+                                                        </button>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    </main>
+
+                    <footer className="py-6 bg-winblue-950 text-center text-winblue-200 text-xs mt-auto border-t border-winblue-900">
+                        <p>{SITE_CONFIG.footerText}</p>
+                    </footer>
+                </div>
+            );
+        };
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
