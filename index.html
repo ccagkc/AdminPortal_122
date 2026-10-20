@@ -11,6 +11,7 @@
     <meta http-equiv="Expires" content="0">
     <meta name="robots" content="noindex, nofollow">
 
+    <!-- 🟢 已徹底移除導致 404 的 manifest 與 style.css，全站改用 Tailwind 與內部樣式確保絕對穩定 -->
     <meta name="theme-color" content="#1e3a8a">
     <style>
         body { -webkit-tap-highlight-color: transparent; }
@@ -109,7 +110,7 @@
             const [notifTitle, setNotifTitle] = useState('');
             const [notifBody, setNotifBody] = useState('');
             
-            // 🟢 將單一 URL 拆分為報名連結與相關專頁連結
+            // 雙連結欄位
             const [notifRegUrl, setNotifRegUrl] = useState('');
             const [notifPageUrl, setNotifPageUrl] = useState('');
             
@@ -341,7 +342,7 @@
             const handleEditClick = (item) => {
                 setNotifTitle(item.title || '');
                 setNotifBody(item.body || '');
-                // 🟢 支援舊版資料結構轉換
+                // 支援舊版資料結構轉換
                 if (item.url && !item.regUrl && !item.pageUrl) {
                     setNotifPageUrl(item.url); 
                 } else {
@@ -364,7 +365,6 @@
                 setPublishing(true);
                 try {
                     const isoCreatedAt = new Date(notifDateLocal).toISOString();
-                    // 🟢 寫入雙連結結構
                     const notifData = {
                         title: notifTitle.trim(),
                         body: notifBody.trim(),
@@ -376,7 +376,6 @@
 
                     if (editingNotifId) {
                         const docRef = fb.dbModule.doc(fb.db, 'artifacts', fb.appId, 'public', 'data', 'notifications', editingNotifId);
-                        // 更新時若舊資料有 url 欄位，可透過置換為空值來覆蓋，確保乾淨
                         await fb.dbModule.setDoc(docRef, { ...notifData, url: fb.dbModule.deleteField() }, { merge: true });
                         alert('✅ 通告已成功修改，並即刻於會友月曆上更新！');
                     } else {
@@ -484,7 +483,11 @@
                                     disabled={authLoading} 
                                     className="w-full bg-winblue-800 hover:bg-winblue-900 text-white font-bold py-4 rounded-xl transition shadow-md active:scale-95 text-lg border border-winblue-950"
                                 >
-                                    {authLoading ? <i className="fa-solid fa-spinner fa-spin"></i> : (isRegister ? '初始化並登入' : '安全登入管理後台')}
+                                    {authLoading ? (
+                                        <span className="flex items-center justify-center gap-2"><i className="fa-solid fa-spinner fa-spin"></i> 處理中...</span>
+                                    ) : (
+                                        <span>{isRegister ? '初始化並登入' : '安全登入管理後台'}</span>
+                                    )}
                                 </button>
                             </form>
                         </div>
@@ -597,8 +600,9 @@
 
                                         {editingNotifId && (
                                             <div className="bg-amber-50 p-4 rounded-xl border border-amber-200 mb-6 flex flex-col sm:flex-row justify-between sm:items-center gap-3">
-                                                <span className="text-amber-800 text-sm font-medium">
-                                                    <i className="fa-solid fa-pen-to-square mr-2"></i>正在修改：<strong>{notifTitle || '未命名通告'}</strong>
+                                                <span className="text-amber-800 text-sm font-medium flex items-center">
+                                                    <i className="fa-solid fa-pen-to-square mr-2"></i>
+                                                    <span>正在修改：<strong>{notifTitle || '未命名通告'}</strong></span>
                                                 </span>
                                                 <button onClick={clearEditState} className="bg-white text-amber-700 hover:bg-amber-100 border border-amber-300 px-4 py-2 rounded-lg text-xs font-bold transition shrink-0">
                                                     取消修改並返回
@@ -648,7 +652,6 @@
                                                 ></textarea>
                                             </div>
 
-                                            {/* 🟢 拆分為兩個獨立的連結輸入框 */}
                                             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                                 <div className="bg-slate-50 p-4 rounded-xl border border-slate-200">
                                                     <label className="block text-sm font-bold text-emerald-700 mb-1">
@@ -685,11 +688,11 @@
                                                 className={`w-full text-white font-bold py-4 rounded-xl transition-all shadow-md active:scale-95 disabled:opacity-50 mt-6 text-lg flex items-center justify-center gap-2 border ${editingNotifId ? 'bg-amber-600 hover:bg-amber-700 border-amber-800' : 'bg-winblue-800 hover:bg-winblue-900 border-winblue-950'}`}
                                             >
                                                 {publishing ? (
-                                                    <><i className="fa-solid fa-spinner fa-spin"></i> 處理中...</>
+                                                    <span className="flex items-center gap-2"><i className="fa-solid fa-spinner fa-spin"></i> 處理中...</span>
                                                 ) : editingNotifId ? (
-                                                    <><i className="fa-solid fa-floppy-disk"></i> 儲存修改內容</>
+                                                    <span className="flex items-center gap-2"><i className="fa-solid fa-floppy-disk"></i> 儲存修改內容</span>
                                                 ) : (
-                                                    <><i className="fa-solid fa-paper-plane"></i> 發布至月曆網頁</>
+                                                    <span className="flex items-center gap-2"><i className="fa-solid fa-paper-plane"></i> 發布至月曆網頁</span>
                                                 )}
                                             </button>
                                         </form>
@@ -720,7 +723,6 @@
                                                 {existingNotifs.map((item) => {
                                                     const dateStr = item.createdAt ? new Date(item.createdAt).toLocaleString('zh-HK', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }) : '無時間紀錄';
                                                     
-                                                    // 🟢 相容舊版 url 與新版 regUrl/pageUrl
                                                     const hasRegUrl = !!item.regUrl;
                                                     const hasPageUrl = !!item.pageUrl || !!item.url;
 
@@ -737,7 +739,6 @@
                                                                     {item.body}
                                                                 </p>
                                                                 
-                                                                {/* 🟢 標籤化顯示擁有的連結類型 */}
                                                                 <div className="flex flex-wrap gap-2 pt-1">
                                                                     {hasRegUrl && <span className="text-[10px] bg-emerald-50 text-emerald-700 border border-emerald-200 px-2 py-0.5 rounded font-bold"><i className="fa-solid fa-file-signature mr-1"></i>已附報名表</span>}
                                                                     {hasPageUrl && <span className="text-[10px] bg-winblue-50 text-winblue-700 border border-winblue-200 px-2 py-0.5 rounded font-bold"><i className="fa-solid fa-link mr-1"></i>已附相關專頁</span>}
@@ -793,33 +794,37 @@
                                                 目前還沒有任何使用者註冊紀錄。
                                             </div>
                                         ) : (
-                                            processedStatsData.map(({ groupName, users }) => (
-                                                <div key={groupName} className="bg-white rounded-xl shadow-sm border border-winblue-100 overflow-hidden">
-                                                    <div className="bg-winblue-50/60 px-6 py-3 border-b border-winblue-200 flex justify-between items-center">
-                                                        <h4 className="font-bold text-winblue-950 flex items-center gap-2">
-                                                            <i className="fa-solid fa-users text-winblue-700"></i> {groupName}
-                                                        </h4>
-                                                        <span className="bg-winblue-800 text-white text-xs px-2.5 py-1 rounded-full font-bold">
-                                                            {users.length} 人
-                                                        </span>
+                                            processedStatsData.map(({ groupName, users }) => {
+                                                return (
+                                                    <div key={groupName} className="bg-white rounded-xl shadow-sm border border-winblue-100 overflow-hidden">
+                                                        <div className="bg-winblue-50/60 px-6 py-3 border-b border-winblue-200 flex justify-between items-center">
+                                                            <h4 className="font-bold text-winblue-950 flex items-center gap-2">
+                                                                <i className="fa-solid fa-users text-winblue-700"></i> {groupName}
+                                                            </h4>
+                                                            <span className="bg-winblue-800 text-white text-xs px-2.5 py-1 rounded-full font-bold">
+                                                                {users.length} 人
+                                                            </span>
+                                                        </div>
+                                                        <div className="divide-y divide-slate-100">
+                                                            {users.map((user, idx) => {
+                                                                return (
+                                                                    <div key={idx} className="flex justify-between items-center p-4 hover:bg-winblue-50/30 transition">
+                                                                        <div className="font-medium text-slate-700">
+                                                                            {user.username} {user.notificationsEnabled && <i className="fa-solid fa-bell text-winblue-600 ml-1.5 text-xs" title="已開啟推播"></i>}
+                                                                        </div>
+                                                                        <div className="text-sm flex items-center gap-4">
+                                                                            <span className="text-slate-400 text-xs hidden md:inline">最後活動: {user.lastActive ? user.lastActive.substring(0,10) : '無紀錄'}</span>
+                                                                            <span className="bg-emerald-50 text-emerald-700 border border-emerald-200 px-3 py-1 rounded-lg font-bold">
+                                                                                已讀 {user.completedCount || 0} 天
+                                                                            </span>
+                                                                        </div>
+                                                                    </div>
+                                                                );
+                                                            })}
+                                                        </div>
                                                     </div>
-                                                    <div className="divide-y divide-slate-100">
-                                                        {users.map((user, idx) => (
-                                                            <div key={idx} className="flex justify-between items-center p-4 hover:bg-winblue-50/30 transition">
-                                                                <div className="font-medium text-slate-700">
-                                                                    {user.username} {user.notificationsEnabled && <i className="fa-solid fa-bell text-winblue-600 ml-1.5 text-xs" title="已開啟推播"></i>}
-                                                                </div>
-                                                                <div className="text-sm flex items-center gap-4">
-                                                                    <span className="text-slate-400 text-xs hidden md:inline">最後活動: {user.lastActive ? user.lastActive.substring(0,10) : '無紀錄'}</span>
-                                                                    <span className="bg-emerald-50 text-emerald-700 border border-emerald-200 px-3 py-1 rounded-lg font-bold">
-                                                                        已讀 {user.completedCount || 0} 天
-                                                                    </span>
-                                                                </div>
-                                                            </div>
-                                                        ))}
-                                                    </div>
-                                                </div>
-                                            ))
+                                                );
+                                            })
                                         )}
                                     </div>
                                 )}
@@ -859,11 +864,33 @@
                                         <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
                                             <h3 className="font-bold text-lg mb-4 text-winblue-950 border-l-4 border-winblue-800 pl-3">現有小組列表</h3>
                                             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                                                {appSettings.groups.map(g => (
-                                                    <div key={g} className="flex justify-between items-center bg-slate-50 p-3 rounded-xl border border-slate-200">
-                                                        <span className="font-medium text-slate-700">{g}</span>
-                                                        <button onClick={() => handleRemoveGroup(g)} className="text-red-500 hover:text-red-700 hover:bg-red-50 p-2 rounded-lg transition" title="刪除小組">
-                                                            <i className="fa-solid fa-trash-can"></i>
-                                                        </button>
-                                                    </div>
-                                                ))}
+                                                {appSettings.groups.map(g => {
+                                                    return (
+                                                        <div key={g} className="flex justify-between items-center bg-slate-50 p-3 rounded-xl border border-slate-200">
+                                                            <span className="font-medium text-slate-700">{g}</span>
+                                                            <button onClick={() => handleRemoveGroup(g)} className="text-red-500 hover:text-red-700 hover:bg-red-50 p-2 rounded-lg transition" title="刪除小組">
+                                                                <i className="fa-solid fa-trash-can"></i>
+                                                            </button>
+                                                        </div>
+                                                    );
+                                                })}
+                                            </div>
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    </main>
+
+                    <footer className="py-6 bg-winblue-950 text-center text-winblue-200 text-xs mt-auto border-t border-winblue-900">
+                        <p>{SITE_CONFIG.footerText}</p>
+                    </footer>
+                </div>
+            );
+        };
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
