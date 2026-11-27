@@ -11,7 +11,6 @@
     <meta http-equiv="Expires" content="0">
     <meta name="robots" content="noindex, nofollow">
 
-    <!-- 🟢 已徹底移除導致 404 的 manifest 與 style.css，全站改用 Tailwind 與內部樣式確保絕對穩定 -->
     <meta name="theme-color" content="#1e3a8a">
     <style>
         body { -webkit-tap-highlight-color: transparent; }
@@ -97,42 +96,30 @@
             const [appSettings, setAppSettings] = useState({ groups: ['未入組/其他', '少年崇拜', '奇行組', 'IMA組', '加利利奮青', '彼得組', '隨意行組', '葡萄果組', 'Spectrum組', '家靈一組', '7-11組', '清心組', 'ReConnect組', '基順ECO組', '蜜組', '喜樂組'] });
 
             const [password, setPassword] = useState('');
-            const [isRegister, setIsRegister] = useState(false);
             const [errorMsg, setErrorMsg] = useState('');
             const [authLoading, setAuthLoading] = useState(false);
 
             const [activeTab, setActiveTab] = useState('publish'); 
             const [newGroup, setNewGroup] = useState('');
-            const [inviteCodeInput, setInviteCodeInput] = useState(''); 
+            const [inviteCodeInput, setInviteCodeInput] = useState('KCC2026'); 
             const [usersList, setUsersList] = useState([]);
             const [loadingStats, setLoadingStats] = useState(false);
 
             const [notifTitle, setNotifTitle] = useState('');
             const [notifBody, setNotifBody] = useState('');
-            
-            // 雙連結欄位
             const [notifRegUrl, setNotifRegUrl] = useState('');
             const [notifPageUrl, setNotifPageUrl] = useState('');
-            
             const [notifDateLocal, setNotifDateLocal] = useState(getCurrentDateTimeLocal());
             const [publishing, setPublishing] = useState(false);
-            
             const [editingNotifId, setEditingNotifId] = useState(null);
 
             const [existingNotifs, setExistingNotifs] = useState([]);
             const [loadingNotifs, setLoadingStatsNotifs] = useState(false);
 
             let unsubscribeSettings = useRef(null);
+            let unsubscribeSecret = useRef(null);
             let unsubscribeProfile = useRef(null);
             let unsubscribeNotifList = useRef(null);
-
-            useEffect(() => {
-                if (appSettings?.inviteCode) {
-                    setInviteCodeInput(appSettings.inviteCode);
-                } else if (appSettings && !appSettings.inviteCode) {
-                    setInviteCodeInput('KCC2026'); 
-                }
-            }, [appSettings]);
 
             useEffect(() => {
                 let unsubscribeAuth = null;
@@ -169,9 +156,21 @@
 
                         unsubscribeAuth = authModule.onAuthStateChanged(auth, (user) => {
                             if (unsubscribeProfile.current) unsubscribeProfile.current();
+                            if (unsubscribeSecret.current) unsubscribeSecret.current();
                         
                             if (user && user.email.endsWith(SITE_CONFIG.adminEmailDomain)) {
                                 setCurrentUser(user);
+
+                                // 🟢 安全升級：登入後才讀取私密的 settings/secret 邀請碼
+                                const secretRef = dbModule.doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'secret');
+                                unsubscribeSecret.current = dbModule.onSnapshot(secretRef, (snap) => {
+                                    if (snap.exists() && snap.data().inviteCode) {
+                                        setInviteCodeInput(snap.data().inviteCode);
+                                    } else {
+                                        setInviteCodeInput('KCC2026');
+                                    }
+                                });
+
                                 const profileRef = dbModule.doc(db, 'artifacts', appId, 'public', 'data', 'userProfiles', user.uid);
                                 unsubscribeProfile.current = dbModule.onSnapshot(profileRef, (snap) => {
                                     if (snap.exists()) {
@@ -198,6 +197,7 @@
                 return () => { 
                     if (unsubscribeAuth) unsubscribeAuth();
                     if (unsubscribeSettings.current) unsubscribeSettings.current();
+                    if (unsubscribeSecret.current) unsubscribeSecret.current();
                     if (unsubscribeProfile.current) unsubscribeProfile.current();
                     if (unsubscribeNotifList.current) unsubscribeNotifList.current();
                 };
@@ -249,6 +249,7 @@
                 };
             }, [activeTab, fb, currentUser]);
 
+            // 🟢 安全升級：移除前端註冊邏輯，僅保留安全登入
             const handleAdminAuth = async (e) => {
                 e.preventDefault(); 
                 setAuthLoading(true); 
@@ -256,18 +257,15 @@
                 const adminEmail = `admin${SITE_CONFIG.adminEmailDomain}`;
 
                 try {
-                    if (isRegister) {
-                        const cred = await fb.authModule.createUserWithEmailAndPassword(fb.auth, adminEmail, password);
-                        await fb.dbModule.setDoc(fb.dbModule.doc(fb.db, 'artifacts', fb.appId, 'public', 'data', 'userProfiles', cred.user.uid), { username: '系統管理員', role: 'admin', createdAt: new Date().toISOString() });
-                    } else {
-                        const cred = await fb.authModule.signInWithEmailAndPassword(fb.auth, adminEmail, password);
-                        const ref = fb.dbModule.doc(fb.db, 'artifacts', fb.appId, 'public', 'data', 'userProfiles', cred.user.uid);
-                        const snap = await fb.dbModule.getDoc(ref);
-                        if (!snap.exists()) await fb.dbModule.setDoc(ref, { username: '系統管理員', role: 'admin', createdAt: new Date().toISOString() });
+                    const cred = await fb.authModule.signInWithEmailAndPassword(fb.auth, adminEmail, password);
+                    const ref = fb.dbModule.doc(fb.db, 'artifacts', fb.appId, 'public', 'data', 'userProfiles', cred.user.uid);
+                    const snap = await fb.dbModule.getDoc(ref);
+                    if (!snap.exists()) {
+                        await fb.dbModule.setDoc(ref, { username: '系統管理員', role: 'admin', createdAt: new Date().toISOString() });
                     }
                 } catch (err) { 
                     console.error("管理員登入失敗詳細錯誤:", err);
-                    setErrorMsg(`連線異常 (${err.code || err.message})`); 
+                    setErrorMsg('密碼錯誤或帳號未授權，請確認後再試。'); 
                 } finally { 
                     setAuthLoading(false); 
                 }
@@ -281,12 +279,18 @@
                 clearEditState(); setActiveTab('publish');
             };
 
+            // 🟢 安全升級：將邀請碼寫入私密的 settings/secret，並從公開的 settings/general 移除舊欄位
             const handleUpdateInviteCode = async () => {
                 if (!inviteCodeInput.trim()) return alert('邀請碼不能為空！');
                 try {
-                    const settingsRef = fb.dbModule.doc(fb.db, 'artifacts', fb.appId, 'public', 'data', 'settings', 'general');
-                    await fb.dbModule.setDoc(settingsRef, { inviteCode: inviteCodeInput.trim().toUpperCase() }, { merge: true });
-                    alert('✅ 系統邀請碼已成功更新！前台會友註冊時將立刻生效。');
+                    const newCode = inviteCodeInput.trim().toUpperCase();
+                    const secretRef = fb.dbModule.doc(fb.db, 'artifacts', fb.appId, 'public', 'data', 'settings', 'secret');
+                    await fb.dbModule.setDoc(secretRef, { inviteCode: newCode }, { merge: true });
+
+                    const generalRef = fb.dbModule.doc(fb.db, 'artifacts', fb.appId, 'public', 'data', 'settings', 'general');
+                    await fb.dbModule.setDoc(generalRef, { inviteCode: fb.dbModule.deleteField() }, { merge: true });
+
+                    alert('✅ 系統邀請碼已安全更新至私密資料庫！前台驗證將立刻生效。');
                 } catch (err) { alert('更新失敗：' + err.message); }
             };
 
@@ -342,7 +346,6 @@
             const handleEditClick = (item) => {
                 setNotifTitle(item.title || '');
                 setNotifBody(item.body || '');
-                // 支援舊版資料結構轉換
                 if (item.url && !item.regUrl && !item.pageUrl) {
                     setNotifPageUrl(item.url); 
                 } else {
@@ -430,7 +433,7 @@
             if (loading) return (
                 <div className="flex-grow flex flex-col items-center justify-center text-winblue-900 bg-slate-200 min-h-screen">
                     <i className="fa-solid fa-circle-notch fa-spin text-5xl mb-4 text-winblue-800"></i>
-                    <p className="font-bold tracking-widest text-lg">Windows 管理員安全驗證中...</p>
+                    <p className="font-bold tracking-widest text-lg">管理員安全驗證中...</p>
                 </div>
             );
 
@@ -467,26 +470,15 @@
                                     />
                                 </div>
 
-                                <div className="flex items-center justify-center">
-                                    <input 
-                                        type="checkbox" 
-                                        id="regAdmin" 
-                                        checked={isRegister} 
-                                        onChange={(e) => setIsRegister(e.target.checked)} 
-                                        className="mr-2 text-winblue-600 focus:ring-winblue-500 rounded" 
-                                    />
-                                    <label htmlFor="regAdmin" className="text-xs text-slate-600 cursor-pointer font-medium">首次初始化設定帳號密碼</label>
-                                </div>
-
                                 <button 
                                     type="submit" 
                                     disabled={authLoading} 
                                     className="w-full bg-winblue-800 hover:bg-winblue-900 text-white font-bold py-4 rounded-xl transition shadow-md active:scale-95 text-lg border border-winblue-950"
                                 >
                                     {authLoading ? (
-                                        <span className="flex items-center justify-center gap-2"><i className="fa-solid fa-spinner fa-spin"></i> 處理中...</span>
+                                        <span className="flex items-center justify-center gap-2"><i className="fa-solid fa-spinner fa-spin"></i> 驗證中...</span>
                                     ) : (
-                                        <span>{isRegister ? '初始化並登入' : '安全登入管理後台'}</span>
+                                        <span>安全登入管理後台</span>
                                     )}
                                 </button>
                             </form>
@@ -722,7 +714,6 @@
                                             <div className="space-y-4">
                                                 {existingNotifs.map((item) => {
                                                     const dateStr = item.createdAt ? new Date(item.createdAt).toLocaleString('zh-HK', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }) : '無時間紀錄';
-                                                    
                                                     const hasRegUrl = !!item.regUrl;
                                                     const hasPageUrl = !!item.pageUrl || !!item.url;
 
@@ -833,7 +824,7 @@
                                 {activeTab === 'settings' && (
                                     <div className="max-w-2xl mx-auto space-y-8 animate-fade-in">
                                         <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
-                                            <h3 className="font-bold text-lg mb-4 text-winblue-950 border-l-4 border-winblue-800 pl-3">系統註冊邀請碼設定</h3>
+                                            <h3 className="font-bold text-lg mb-4 text-winblue-950 border-l-4 border-winblue-800 pl-3">系統註冊邀請碼設定 (私密加密儲存)</h3>
                                             <div className="flex gap-2">
                                                 <input 
                                                     type="text" 
@@ -844,7 +835,7 @@
                                                 />
                                                 <button onClick={handleUpdateInviteCode} className="bg-winblue-800 text-white px-6 font-bold rounded-xl hover:bg-winblue-900 transition border border-winblue-950">更新邀請碼</button>
                                             </div>
-                                            <p className="text-xs text-slate-400 mt-2">新會友在首次登記時，必須輸入此密碼才能成功註冊。修改後立即生效。</p>
+                                            <p className="text-xs text-slate-400 mt-2">邀請碼儲存於私密路徑，前端無法窺探。修改後會由 Firestore 伺服器端即時驗證。</p>
                                         </div>
 
                                         <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
