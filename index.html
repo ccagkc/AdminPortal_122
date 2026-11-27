@@ -63,7 +63,75 @@
         const SITE_CONFIG = {
             adminEmailDomain: "@admin.kcc.app",
             footerText: "© CCAGKC · CHURCH CALENDAR ADMIN SYSTEM",
-            googleSheetUrl: "https://docs.google.com/spreadsheets/d/1_FfNhrUwgI3l0vOpDqWfooAVQUja-Sl-YQOna3nJyQo/edit?usp=sharing"
+            googleSheetUrl: "https://docs.google.com/spreadsheets/d/1_FfNhrUwgI3l0vOpDqWfooAVQUja-Sl-YQOna3nJyQo/edit?usp=sharing",
+            // 教會常用信任網域白名單（非此名單內的 HTTPS 網址在發布前會觸發二次人工確認）
+            trustedDomains: [
+                'forms.gle',
+                'docs.google.com',
+                'drive.google.com',
+                'youtube.com',
+                'www.youtube.com',
+                'youtu.be'
+            ]
+        };
+
+        // 🟢 安全升級：後台嚴格連結驗證與防釣魚清洗引擎
+        const validateSafeUrl = (rawStr, allowDateQuery = false, fieldLabel = '連結') => {
+            if (!rawStr || !rawStr.trim()) {
+                return { ok: true, empty: true, url: '', isUntrustedDomain: false, hostname: '' };
+            }
+            const trimmed = rawStr.trim();
+
+            if (/\s/.test(trimmed)) {
+                return { ok: false, error: `${fieldLabel}不能包含空白字元。` };
+            }
+
+            if (allowDateQuery && trimmed.startsWith('?date=')) {
+                if (/^\?date=\d{4}-\d{2}-\d{2}$/.test(trimmed)) {
+                    return { ok: true, empty: false, url: trimmed, isUntrustedDomain: false, hostname: '內部月曆指定日期' };
+                }
+                return { ok: false, error: `${fieldLabel}格式錯誤，內部跳轉請使用 ?date=YYYY-MM-DD（如 ?date=2026-11-27）。` };
+            }
+
+            if (/^(http:|javascript:|data:|vbscript:|file:|blob:)/i.test(trimmed)) {
+                return { ok: false, error: `已攔截不安全協定！${fieldLabel}僅允許 https:// 加密網址。` };
+            }
+
+            let candidate = trimmed;
+            if (/^(forms\.gle|docs\.google\.com|drive\.google\.com|www\.youtube\.com|youtu\.be)\//i.test(candidate)) {
+                candidate = `https://${candidate}`;
+            }
+
+            if (!candidate.startsWith('https://')) {
+                return { 
+                    ok: false, 
+                    error: `${fieldLabel}必須以 https:// 開頭` + (allowDateQuery ? '，或使用 ?date=YYYY-MM-DD。' : '。') 
+                };
+            }
+
+            try {
+                const parsed = new URL(candidate);
+                if (parsed.protocol !== 'https:') {
+                    return { ok: false, error: `${fieldLabel}必須使用 HTTPS 安全加密協定。` };
+                }
+                if (parsed.username || parsed.password || trimmed.includes('@')) {
+                    return { ok: false, error: `${fieldLabel}包含可疑的 @ 偽裝字元，已遭防釣魚機制攔截。` };
+                }
+                const host = parsed.hostname.toLowerCase();
+                if (!host || !/^[a-z0-9-]+(\.[a-z0-9-]+)+$/.test(host)) {
+                    return { ok: false, error: `${fieldLabel}的網域名稱格式不合法。` };
+                }
+                const isTrusted = SITE_CONFIG.trustedDomains.some(d => host === d || host.endsWith(`.${d}`));
+                return {
+                    ok: true,
+                    empty: false,
+                    url: parsed.href,
+                    isUntrustedDomain: !isTrusted,
+                    hostname: host
+                };
+            } catch (err) {
+                return { ok: false, error: `${fieldLabel}不是有效的網址格式，請檢查是否有缺漏字元。` };
+            }
         };
 
         const getCurrentDateTimeLocal = () => {
@@ -161,7 +229,6 @@
                             if (user && user.email.endsWith(SITE_CONFIG.adminEmailDomain)) {
                                 setCurrentUser(user);
 
-                                // 🟢 安全升級：登入後才讀取私密的 settings/secret 邀請碼
                                 const secretRef = dbModule.doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'secret');
                                 unsubscribeSecret.current = dbModule.onSnapshot(secretRef, (snap) => {
                                     if (snap.exists() && snap.data().inviteCode) {
@@ -249,7 +316,6 @@
                 };
             }, [activeTab, fb, currentUser]);
 
-            // 🟢 安全升級：移除前端註冊邏輯，僅保留安全登入
             const handleAdminAuth = async (e) => {
                 e.preventDefault(); 
                 setAuthLoading(true); 
@@ -279,7 +345,6 @@
                 clearEditState(); setActiveTab('publish');
             };
 
-            // 🟢 安全升級：將邀請碼寫入私密的 settings/secret，並從公開的 settings/general 移除舊欄位
             const handleUpdateInviteCode = async () => {
                 if (!inviteCodeInput.trim()) return alert('邀請碼不能為空！');
                 try {
@@ -358,11 +423,35 @@
                 window.scrollTo({ top: 0, behavior: 'smooth' }); 
             };
 
+            // 🟢 安全升級：發布前強制通過雙連結安全校驗與陌生網域確認
             const handlePublishNotification = async (e) => {
                 e.preventDefault();
                 if (!notifTitle.trim() || !notifBody.trim()) {
                     alert('請填寫通告標題與詳細內容！');
                     return;
+                }
+
+                const regCheck = validateSafeUrl(notifRegUrl, false, '報名表連結');
+                if (!regCheck.ok) {
+                    alert(`❌ 安全攔截：\n${regCheck.error}`);
+                    return;
+                }
+
+                const pageCheck = validateSafeUrl(notifPageUrl, true, '相關專頁連結');
+                if (!pageCheck.ok) {
+                    alert(`❌ 安全攔截：\n${pageCheck.error}`);
+                    return;
+                }
+
+                const untrustedHosts = [];
+                if (regCheck.isUntrustedDomain) untrustedHosts.push(`• 報名表網域：${regCheck.hostname}`);
+                if (pageCheck.isUntrustedDomain) untrustedHosts.push(`• 相關專頁網域：${pageCheck.hostname}`);
+
+                if (untrustedHosts.length > 0) {
+                    const proceed = confirm(
+                        `⚠️ 外部網域安全確認：\n\n您輸入的連結指向非預設白名單（Google / YouTube）的外部網域：\n${untrustedHosts.join('\n')}\n\n請仔細核對無拼字錯誤或可疑短網址。確定要發放此連結給全教會會友嗎？`
+                    );
+                    if (!proceed) return;
                 }
 
                 setPublishing(true);
@@ -371,8 +460,8 @@
                     const notifData = {
                         title: notifTitle.trim(),
                         body: notifBody.trim(),
-                        regUrl: notifRegUrl.trim() || '',
-                        pageUrl: notifPageUrl.trim() || '',
+                        regUrl: regCheck.url,
+                        pageUrl: pageCheck.url,
                         createdAt: isoCreatedAt,
                         publisher: userProfile?.username || '系統管理員'
                     };
@@ -380,18 +469,18 @@
                     if (editingNotifId) {
                         const docRef = fb.dbModule.doc(fb.db, 'artifacts', fb.appId, 'public', 'data', 'notifications', editingNotifId);
                         await fb.dbModule.setDoc(docRef, { ...notifData, url: fb.dbModule.deleteField() }, { merge: true });
-                        alert('✅ 通告已成功修改，並即刻於會友月曆上更新！');
+                        alert('✅ 通告已通過安全檢查並成功更新！');
                     } else {
                         const notifCol = fb.dbModule.collection(fb.db, 'artifacts', fb.appId, 'public', 'data', 'notifications');
                         await fb.dbModule.addDoc(notifCol, notifData);
-                        alert('🎉 新通告已成功寫入 Firestore 並同步至全教會歷史訊息牆！');
+                        alert('🎉 新通告已通過安全驗證，成功寫入 Firestore 並同步至全教會歷史訊息牆！');
                     }
 
                     clearEditState();
                     setActiveTab('manageNotifs'); 
                 } catch (err) {
                     console.error('寫入 Firestore 失敗:', err);
-                    alert('操作失敗：' + err.message);
+                    alert('操作遭拒或失敗（請確認連結是否符合安全規則）：' + err.message);
                 } finally {
                     setPublishing(false);
                 }
@@ -429,6 +518,8 @@
             };
 
             const processedStatsData = getProcessedStats();
+            const liveRegStatus = validateSafeUrl(notifRegUrl, false, '報名表連結');
+            const livePageStatus = validateSafeUrl(notifPageUrl, true, '相關專頁連結');
 
             if (loading) return (
                 <div className="flex-grow flex flex-col items-center justify-center text-winblue-900 bg-slate-200 min-h-screen">
@@ -585,8 +676,9 @@
                                             <h3 className="font-bold text-lg text-winblue-950 border-l-4 border-winblue-800 pl-3">
                                                 {editingNotifId ? '修改現有通告內容' : '撰寫並發布全教會最新通告'}
                                             </h3>
-                                            <span className={`text-xs font-bold px-3 py-1 rounded-full ${editingNotifId ? 'bg-amber-100 text-amber-800' : 'bg-winblue-100 text-winblue-900'}`}>
-                                                {editingNotifId ? '編輯模式 (Edit Mode)' : '即時寫入 Firestore'}
+                                            <span className={`text-xs font-bold px-3 py-1 rounded-full flex items-center gap-1.5 w-fit ${editingNotifId ? 'bg-amber-100 text-amber-800' : 'bg-emerald-100 text-emerald-800'}`}>
+                                                <i className="fa-solid fa-shield-halved"></i>
+                                                {editingNotifId ? '編輯模式 · 安全連結防護中' : 'HTTPS 安全連結強制校驗中'}
                                             </span>
                                         </div>
 
@@ -647,44 +739,62 @@
                                             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                                 <div className="bg-slate-50 p-4 rounded-xl border border-slate-200">
                                                     <label className="block text-sm font-bold text-emerald-700 mb-1">
-                                                        <i className="fa-solid fa-file-signature mr-1"></i> 報名表連結 (選填)
+                                                        <i className="fa-solid fa-file-signature mr-1"></i> 報名表連結 (選填 · 限 HTTPS)
                                                     </label>
                                                     <input 
                                                         type="text" 
                                                         value={notifRegUrl} 
                                                         onChange={e => setNotifRegUrl(e.target.value)} 
-                                                        placeholder="例如：Google Form 網址" 
-                                                        className="w-full p-3 border border-slate-300 rounded-lg focus:outline-none focus:border-emerald-500 text-sm bg-white" 
+                                                        placeholder="https://forms.gle/..." 
+                                                        className={`w-full p-3 border rounded-lg focus:outline-none text-sm bg-white ${!liveRegStatus.ok ? 'border-red-400 focus:border-red-600' : 'border-slate-300 focus:border-emerald-500'}`} 
                                                     />
-                                                    <p className="text-[11px] text-slate-400 mt-1.5 leading-tight">若填寫此欄位，通告下方將會出現醒目的「前往報名」按鈕。</p>
+                                                    {!liveRegStatus.ok ? (
+                                                        <p className="text-[11px] text-red-600 font-bold mt-1.5 leading-tight"><i className="fa-solid fa-triangle-exclamation mr-1"></i>{liveRegStatus.error}</p>
+                                                    ) : !liveRegStatus.empty ? (
+                                                        <p className={`text-[11px] font-bold mt-1.5 leading-tight ${liveRegStatus.isUntrustedDomain ? 'text-amber-600' : 'text-emerald-600'}`}>
+                                                            <i className={`fa-solid ${liveRegStatus.isUntrustedDomain ? 'fa-circle-exclamation' : 'fa-circle-check'} mr-1`}></i>
+                                                            {liveRegStatus.isUntrustedDomain ? `外部網域 (${liveRegStatus.hostname})，發布時將再次確認` : `已驗證信任網域 (${liveRegStatus.hostname})`}
+                                                        </p>
+                                                    ) : (
+                                                        <p className="text-[11px] text-slate-400 mt-1.5 leading-tight">僅允許 https:// 加密網址，系統自動攔截可疑格式。</p>
+                                                    )}
                                                 </div>
 
                                                 <div className="bg-slate-50 p-4 rounded-xl border border-slate-200">
                                                     <label className="block text-sm font-bold text-winblue-700 mb-1">
-                                                        <i className="fa-solid fa-link mr-1"></i> 相關專頁連結 (選填)
+                                                        <i className="fa-solid fa-link mr-1"></i> 相關專頁連結 (選填 · 限 HTTPS 或內部日期)
                                                     </label>
                                                     <input 
                                                         type="text" 
                                                         value={notifPageUrl} 
                                                         onChange={e => setNotifPageUrl(e.target.value)} 
-                                                        placeholder="外部網址 或 ?date=YYYY-MM-DD" 
-                                                        className="w-full p-3 border border-slate-300 rounded-lg focus:outline-none focus:border-winblue-500 text-sm bg-white" 
+                                                        placeholder="https://... 或 ?date=YYYY-MM-DD" 
+                                                        className={`w-full p-3 border rounded-lg focus:outline-none text-sm bg-white ${!livePageStatus.ok ? 'border-red-400 focus:border-red-600' : 'border-slate-300 focus:border-winblue-500'}`} 
                                                     />
-                                                    <p className="text-[11px] text-slate-400 mt-1.5 leading-tight">可填寫 YouTube 直播網址，或輸入 <code>?date=...</code> 跳轉月曆。</p>
+                                                    {!livePageStatus.ok ? (
+                                                        <p className="text-[11px] text-red-600 font-bold mt-1.5 leading-tight"><i className="fa-solid fa-triangle-exclamation mr-1"></i>{livePageStatus.error}</p>
+                                                    ) : !livePageStatus.empty ? (
+                                                        <p className={`text-[11px] font-bold mt-1.5 leading-tight ${livePageStatus.isUntrustedDomain ? 'text-amber-600' : 'text-emerald-600'}`}>
+                                                            <i className={`fa-solid ${livePageStatus.isUntrustedDomain ? 'fa-circle-exclamation' : 'fa-circle-check'} mr-1`}></i>
+                                                            {livePageStatus.isUntrustedDomain ? `外部網域 (${livePageStatus.hostname})，發布時將再次確認` : `安全格式通過 (${livePageStatus.hostname})`}
+                                                        </p>
+                                                    ) : (
+                                                        <p className="text-[11px] text-slate-400 mt-1.5 leading-tight">限 https:// 網址，或輸入 <code>?date=YYYY-MM-DD</code> 跳轉月曆。</p>
+                                                    )}
                                                 </div>
                                             </div>
 
                                             <button 
                                                 type="submit" 
-                                                disabled={publishing} 
-                                                className={`w-full text-white font-bold py-4 rounded-xl transition-all shadow-md active:scale-95 disabled:opacity-50 mt-6 text-lg flex items-center justify-center gap-2 border ${editingNotifId ? 'bg-amber-600 hover:bg-amber-700 border-amber-800' : 'bg-winblue-800 hover:bg-winblue-900 border-winblue-950'}`}
+                                                disabled={publishing || !liveRegStatus.ok || !livePageStatus.ok} 
+                                                className={`w-full text-white font-bold py-4 rounded-xl transition-all shadow-md active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed mt-6 text-lg flex items-center justify-center gap-2 border ${editingNotifId ? 'bg-amber-600 hover:bg-amber-700 border-amber-800' : 'bg-winblue-800 hover:bg-winblue-900 border-winblue-950'}`}
                                             >
                                                 {publishing ? (
-                                                    <span className="flex items-center gap-2"><i className="fa-solid fa-spinner fa-spin"></i> 處理中...</span>
+                                                    <span className="flex items-center gap-2"><i className="fa-solid fa-spinner fa-spin"></i> 安全驗證與寫入中...</span>
                                                 ) : editingNotifId ? (
-                                                    <span className="flex items-center gap-2"><i className="fa-solid fa-floppy-disk"></i> 儲存修改內容</span>
+                                                    <span className="flex items-center gap-2"><i className="fa-solid fa-floppy-disk"></i> 驗證並儲存修改內容</span>
                                                 ) : (
-                                                    <span className="flex items-center gap-2"><i className="fa-solid fa-paper-plane"></i> 發布至月曆網頁</span>
+                                                    <span className="flex items-center gap-2"><i className="fa-solid fa-shield-check"></i> 安全驗證並發布至月曆</span>
                                                 )}
                                             </button>
                                         </form>
@@ -731,7 +841,7 @@
                                                                 </p>
                                                                 
                                                                 <div className="flex flex-wrap gap-2 pt-1">
-                                                                    {hasRegUrl && <span className="text-[10px] bg-emerald-50 text-emerald-700 border border-emerald-200 px-2 py-0.5 rounded font-bold"><i className="fa-solid fa-file-signature mr-1"></i>已附報名表</span>}
+                                                                    {hasRegUrl && <span className="text-[10px] bg-emerald-50 text-emerald-700 border border-emerald-200 px-2 py-0.5 rounded font-bold"><i className="fa-solid fa-file-signature mr-1"></i>已附安全報名表</span>}
                                                                     {hasPageUrl && <span className="text-[10px] bg-winblue-50 text-winblue-700 border border-winblue-200 px-2 py-0.5 rounded font-bold"><i className="fa-solid fa-link mr-1"></i>已附相關專頁</span>}
                                                                 </div>
                                                             </div>
